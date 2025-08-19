@@ -1,10 +1,10 @@
 package com.cedarsoftware.util;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import com.cedarsoftware.util.LoggingConfig;
 
 /**
  * Useful InetAddress Utilities
@@ -17,7 +17,7 @@ import java.net.UnknownHostException;
  *         you may not use this file except in compliance with the License.
  *         You may obtain a copy of the License at
  *         <br><br>
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *         <a href="http://www.apache.org/licenses/LICENSE-2.0">License</a>
  *         <br><br>
  *         Unless required by applicable law or agreed to in writing, software
  *         distributed under the License is distributed on an "AS IS" BASIS,
@@ -27,14 +27,19 @@ import java.net.UnknownHostException;
  */
 public class InetAddressUtilities
 {
-    private static final Logger LOG = LogManager.getLogger(InetAddressUtilities.class);
-
+    private static final Logger LOG = Logger.getLogger(InetAddressUtilities.class.getName());
+    static { LoggingConfig.init(); }
     private InetAddressUtilities() {
         super();
     }
 
-    public static InetAddress getLocalHost() throws UnknownHostException {
-        return InetAddress.getLocalHost();
+    public static InetAddress getLocalHost() {
+        try {
+            return InetAddress.getLocalHost();
+        } catch (UnknownHostException e) {
+            ExceptionUtilities.uncheckedThrow(e);
+            return null;    // never reached
+        }
     }
 
     public static byte[] getIpAddress() {
@@ -44,7 +49,7 @@ public class InetAddressUtilities
         }
         catch (Exception e)
         {
-            LOG.warn("Failed to obtain computer's IP address", e);
+            LOG.warning("Failed to obtain computer's IP address");
             return new byte[] {0,0,0,0};
         }
     }
@@ -57,7 +62,7 @@ public class InetAddressUtilities
         }
         catch (Exception e)
         {
-            LOG.warn("Unable to fetch 'hostname'", e);
+            LOG.warning("Unable to fetch 'hostname'");
             return "localhost";
         }
     }

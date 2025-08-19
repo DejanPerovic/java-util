@@ -40,7 +40,7 @@ import static com.cedarsoftware.util.GraphComparator.Delta.Command.SET_REMOVE;
  *         you may not use this file except in compliance with the License.
  *         You may obtain a copy of the License at
  *         <br><br>
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *         <a href="http://www.apache.org/licenses/LICENSE-2.0">License</a>
  *         <br><br>
  *         Unless required by applicable law or agreed to in writing, software
  *         distributed under the License is distributed on an "AS IS" BASIS,
@@ -48,15 +48,31 @@ import static com.cedarsoftware.util.GraphComparator.Delta.Command.SET_REMOVE;
  *         See the License for the specific language governing permissions and
  *         limitations under the License.
  */
+@SuppressWarnings("unchecked")
 public class GraphComparator
 {
     public static final String ROOT = "-root-";
 
+    /**
+     * Callback used to obtain a unique identifier for a given object during
+     * graph comparison.
+     */
     public interface ID
     {
+        /**
+         * Return the identifier to use for the supplied object.
+         *
+         * @param objectToId object from which to obtain an id
+         * @return unique identifier for the object
+         */
         Object getId(Object objectToId);
     }
 
+    /**
+     * Represents a single difference between two object graphs.  A collection
+     * of {@code Delta} instances can be used to transform one graph so that it
+     * matches another.
+     */
     public static class Delta implements Serializable
     {
         private static final long serialVersionUID = -4388236892818050806L;
@@ -68,6 +84,16 @@ public class GraphComparator
         private Object optionalKey;
         private Command cmd;
 
+        /**
+         * Construct a delta describing a change between two graphs.
+         *
+         * @param id          identifier of the object containing the difference
+         * @param fieldName   name of the field that differs
+         * @param srcPtr      pointer within the source graph
+         * @param srcValue    value from the source graph
+         * @param targetValue value from the target graph
+         * @param optKey      optional key used by certain collection operations
+         */
         public Delta(Object id, String fieldName, String srcPtr, Object srcValue, Object targetValue, Object optKey)
         {
             this.id = id;
@@ -78,26 +104,43 @@ public class GraphComparator
             optionalKey = optKey;
         }
 
+        /**
+         * @return identifier of the object containing the change
+         */
         public Object getId()
         {
             return id;
         }
 
+        /**
+         * Update the identifier associated with this delta.
+         */
         public void setId(Object id)
         {
             this.id = id;
         }
 
+        /**
+         * @return the name of the field where the difference occurred
+         */
         public String getFieldName()
         {
             return fieldName;
         }
 
+        /**
+         * Set the name of the field where the difference occurred.
+         *
+         * @param fieldName name of the differing field
+         */
         public void setFieldName(String fieldName)
         {
             this.fieldName = fieldName;
         }
 
+        /**
+         * @return value from the source graph
+         */
         public Object getSourceValue()
         {
             return srcValue;
@@ -108,6 +151,9 @@ public class GraphComparator
             this.srcValue = srcValue;
         }
 
+        /**
+         * @return value from the target graph
+         */
         public Object getTargetValue()
         {
             return targetValue;
@@ -118,6 +164,9 @@ public class GraphComparator
             this.targetValue = targetValue;
         }
 
+        /**
+         * @return optional key used for collection operations
+         */
         public Object getOptionalKey()
         {
             return optionalKey;
@@ -128,6 +177,9 @@ public class GraphComparator
             this.optionalKey = optionalKey;
         }
 
+        /**
+         * @return command describing the modification type
+         */
         public Command getCmd()
         {
             return cmd;
@@ -189,7 +241,7 @@ public class GraphComparator
             LIST_RESIZE("list.resize"),
             LIST_SET_ELEMENT("list.setElement");
 
-            private String name;
+            private final String name;
             Command(final String name)
             {
                 this.name = name.intern();
@@ -221,35 +273,78 @@ public class GraphComparator
         }
     }
 
+    /**
+     * Extension of {@link Delta} that associates an error message with the
+     * delta that failed to be applied.
+     */
     public static class DeltaError extends Delta
     {
         private static final long serialVersionUID = 6248596026486571238L;
         public String error;
 
+        /**
+         * Construct a delta error.
+         *
+         * @param error message describing the problem
+         * @param delta the delta that failed
+         */
         public DeltaError(String error, Delta delta)
         {
             super(delta.getId(), delta.fieldName, delta.srcPtr, delta.srcValue, delta.targetValue, delta.optionalKey);
             this.error = error;
         }
 
+        /**
+         * @return the error message
+         */
         public String getError()
         {
             return error;
         }
+
+        @Override
+        public String toString(){
+            return String.format("%s (%s)", getError(), super.toString());
+        }
     }
 
+    /**
+     * Strategy interface used when applying {@link Delta} objects to a source
+     * graph.  Implementations perform the actual mutation operations.
+     */
     public interface DeltaProcessor
     {
+        /** Apply a value into an array element. */
         void processArraySetElement(Object srcValue, Field field, Delta delta);
+
+        /** Resize an array to match the target length. */
         void processArrayResize(Object srcValue, Field field, Delta delta);
+
+        /** Assign a field value on an object. */
         void processObjectAssignField(Object srcValue, Field field, Delta delta);
+
+        /** Remove an orphaned object from the graph. */
         void processObjectOrphan(Object srcValue, Field field, Delta delta);
+
+        /** Change the type of an object reference. */
         void processObjectTypeChanged(Object srcValue, Field field, Delta delta);
+
+        /** Add a value to a {@link java.util.Set}. */
         void processSetAdd(Object srcValue, Field field, Delta delta);
+
+        /** Remove a value from a {@link java.util.Set}. */
         void processSetRemove(Object srcValue, Field field, Delta delta);
+
+        /** Put a key/value pair into a {@link java.util.Map}. */
         void processMapPut(Object srcValue, Field field, Delta delta);
+
+        /** Remove an entry from a {@link java.util.Map}. */
         void processMapRemove(Object srcValue, Field field, Delta delta);
+
+        /** Adjust a {@link java.util.List}'s size. */
         void processListResize(Object srcValue, Field field, Delta delta);
+
+        /** Set a list element to a new value. */
         void processListSetElement(Object srcValue, Field field, Delta delta);
 
         class Helper
@@ -310,7 +405,7 @@ public class GraphComparator
                 {
                     StringBuilder s = new StringBuilder();
                     s.append('[');
-                    int len = Array.getLength(foo);
+                    final int len = Array.getLength(foo);
                     for (int i=0; i < len; i++)
                     {
                         Object element = Array.get(foo, i);
@@ -360,7 +455,7 @@ public class GraphComparator
             }
 
             // for debugging
-//            System.out.println("path = " + path);
+//            LOG.info("path = " + path);
 
             if (visited.contains(path))
             {   // handle cyclic graphs correctly.
@@ -456,7 +551,7 @@ public class GraphComparator
                     continue;
                 }
 
-                final Collection<Field> fields = ReflectionUtils.getDeepDeclaredFields(srcValue.getClass());
+                final Collection<Field> fields = ReflectionUtils.getAllDeclaredFields(srcValue.getClass());
                 String sysId = "(" + System.identityHashCode(srcValue) + ").";
 
                 for (Field field : fields)
@@ -482,30 +577,22 @@ public class GraphComparator
         }
 
         // source objects by ID
-        final Set potentialOrphans = new HashSet();
-        Traverser.traverse(source, new Traverser.Visitor()
-        {
-            public void process(Object o)
-            {
-                if (isIdObject(o, idFetcher))
-                {
-                    potentialOrphans.add(idFetcher.getId(o));
-                }
+        final Set<Object> potentialOrphans = new HashSet<>();
+        Traverser.traverse(source, visit -> {
+            Object node = visit.getNode();
+            if (isIdObject(node, idFetcher)) {
+                potentialOrphans.add(idFetcher.getId(node));
             }
-        });
+        }, null);
 
         // Remove all target objects from potential orphan map, leaving remaining objects
         // that are no longer referenced in the potentialOrphans map.
-        Traverser.traverse(target, new Traverser.Visitor()
-        {
-            public void process(Object o)
-            {
-                if (isIdObject(o, idFetcher))
-                {
-                    potentialOrphans.remove(idFetcher.getId(o));
-                }
+        Traverser.traverse(target, visit -> {
+            Object node = visit.getNode();
+            if (isIdObject(node, idFetcher)) {
+                potentialOrphans.remove(idFetcher.getId(node));
             }
-        });
+        }, null);
 
         List<Delta> forReturn = new ArrayList<>(deltas);
         // Generate DeltaCommands for orphaned objects
@@ -541,7 +628,7 @@ public class GraphComparator
         {
             return false;
         }
-        Class c = o.getClass();
+        Class<?> c = o.getClass();
         if (isLogicalPrimitive(c) ||
                 c.isArray() ||
                 Collection.class.isAssignableFrom(c) ||
@@ -562,96 +649,84 @@ public class GraphComparator
         }
 
     }
+
     /**
      * Deeply compare two Arrays []. Both arrays must be of the same type, same length, and all
      * elements within the arrays must be deeply equal in order to return true.  The appropriate
      * 'resize' or 'setElement' commands will be generated.
+     *
+     * Cyclomatic code complexity reduction by: AxataDarji
      */
-    private static void compareArrays(Delta delta, Collection<Delta> deltas, LinkedList<Delta> stack, ID idFetcher)
-    {
+    private static void compareArrays(Delta delta, Collection<Delta> deltas, LinkedList<Delta> stack, ID idFetcher) {
         int srcLen = Array.getLength(delta.srcValue);
         int targetLen = Array.getLength(delta.targetValue);
 
-        if (srcLen != targetLen)
-        {
-            delta.setCmd(ARRAY_RESIZE);
-            delta.setOptionalKey(targetLen);
-            deltas.add(delta);
+        if (srcLen != targetLen) {
+            handleArrayResize(delta, deltas, targetLen);
         }
 
         final String sysId = "(" + System.identityHashCode(delta.srcValue) + ')';
-        final Class compType = delta.targetValue.getClass().getComponentType();
+        final Class<?> compType = delta.targetValue.getClass().getComponentType();
 
-        if (isLogicalPrimitive(compType))
-        {
-            for (int i=0; i < targetLen; i++)
-            {
-                final Object targetValue = Array.get(delta.targetValue, i);
-                String srcPtr = sysId + '[' + i + ']';
-
-                if (i < srcLen)
-                {   // Do positional check
-                    final Object srcValue = Array.get(delta.srcValue, i);
-
-                    if (srcValue == null && targetValue != null ||
-                            srcValue != null && targetValue == null ||
-                            !srcValue.equals(targetValue))
-                    {
-                        copyArrayElement(delta, deltas, srcPtr, srcValue, targetValue, i);
-                    }
-                }
-                else
-                {   // Target array is larger, issue set-element-commands for each additional element
-                    copyArrayElement(delta, deltas, srcPtr, null, targetValue, i);
-                }
-            }
+        if (isLogicalPrimitive(compType)) {
+            processPrimitiveArray(delta, deltas, sysId, srcLen, targetLen);
+        } else {
+            processNonPrimitiveArray(delta, deltas, stack, idFetcher, sysId, srcLen, targetLen);
         }
-        else
-        {   // Only map IDs in array when the array type is non-primitive
-            for (int i = targetLen - 1; i >= 0; i--)
-            {
-                final Object targetValue = Array.get(delta.targetValue, i);
-                String srcPtr = sysId + '[' + i + ']';
+    }
 
-                if (i < srcLen)
-                {   // Do positional check
-                    final Object srcValue = Array.get(delta.srcValue, i);
+    private static void handleArrayResize(Delta delta, Collection<Delta> deltas, int targetLen) {
+        delta.setCmd(ARRAY_RESIZE);
+        delta.setOptionalKey(targetLen);
+        deltas.add(delta);
+    }
 
-                    if (targetValue == null || srcValue == null)
-                    {
-                        if (srcValue != targetValue)
-                        {   // element was nulled out, create a command to copy it (no need to recurse [add to stack] because null has no depth)
-                            copyArrayElement(delta, deltas, srcPtr, srcValue, targetValue, i);
-                        }
-                    }
-                    else if (isIdObject(srcValue, idFetcher) && isIdObject(targetValue, idFetcher))
-                    {
-                        Object srcId = idFetcher.getId(srcValue);
-                        Object targetId = idFetcher.getId(targetValue);
+    private static void processPrimitiveArray(Delta delta, Collection<Delta> deltas, String sysId, int srcLen, int targetLen) {
+        for (int i = 0; i < targetLen; i++) {
+            final Object targetValue = Array.get(delta.targetValue, i);
+            String srcPtr = sysId + '[' + i + ']';
 
-                        if (targetId.equals(srcId))
-                        {   // No need to copy, same object in same array position, but it's fields could have changed, so add the object to
-                            // the stack for further graph delta comparison.
-                            stack.push(new Delta(delta.id, delta.fieldName, srcPtr, srcValue, targetValue, i));
-                        }
-                        else
-                        {   // IDs do not match?  issue a set-element-command
-                            copyArrayElement(delta, deltas, srcPtr, srcValue, targetValue, i);
-                        }
-                    }
-                    else if (!DeepEquals.deepEquals(srcValue, targetValue))
-                    {
-                        copyArrayElement(delta, deltas, srcPtr, srcValue, targetValue, i);
-                    }
+            if (i < srcLen) {
+                final Object srcValue = Array.get(delta.srcValue, i);
+                if (srcValue == null && targetValue != null ||
+                        srcValue != null && targetValue == null ||
+                        !srcValue.equals(targetValue)) {
+                    copyArrayElement(delta, deltas, srcPtr, srcValue, targetValue, i);
                 }
-                else
-                {   // Target is larger than source - elements have been added, issue a set-element-command for each new position one at the end
-                    copyArrayElement(delta, deltas, srcPtr, null, targetValue, i);
-                }
+            } else {
+                copyArrayElement(delta, deltas, srcPtr, null, targetValue, i);
             }
         }
     }
 
+    private static void processNonPrimitiveArray(Delta delta, Collection<Delta> deltas, LinkedList<Delta> stack, ID idFetcher, String sysId, int srcLen, int targetLen) {
+        for (int i = targetLen - 1; i >= 0; i--) {
+            final Object targetValue = Array.get(delta.targetValue, i);
+            String srcPtr = sysId + '[' + i + ']';
+
+            if (i < srcLen) {
+                final Object srcValue = Array.get(delta.srcValue, i);
+                if (targetValue == null || srcValue == null) {
+                    if (srcValue != targetValue) {
+                        copyArrayElement(delta, deltas, srcPtr, srcValue, targetValue, i);
+                    }
+                } else if (isIdObject(srcValue, idFetcher) && isIdObject(targetValue, idFetcher)) {
+                    Object srcId = idFetcher.getId(srcValue);
+                    Object targetId = idFetcher.getId(targetValue);
+                    if (targetId.equals(srcId)) {
+                        stack.push(new Delta(delta.id, delta.fieldName, srcPtr, srcValue, targetValue, i));
+                    } else {
+                        copyArrayElement(delta, deltas, srcPtr, srcValue, targetValue, i);
+                    }
+                } else if (!DeepEquals.deepEquals(srcValue, targetValue)) {
+                    copyArrayElement(delta, deltas, srcPtr, srcValue, targetValue, i);
+                }
+            } else {
+                copyArrayElement(delta, deltas, srcPtr, null, targetValue, i);
+            }
+        }
+    }
+    
     private static void copyArrayElement(Delta delta, Collection<Delta> deltas, String srcPtr, Object srcValue, Object targetValue, int index)
     {
         Delta copyDelta = new Delta(delta.id, delta.fieldName, srcPtr, srcValue, targetValue, index);
@@ -661,15 +736,16 @@ public class GraphComparator
 
     /**
      * Deeply compare two Sets and generate the appropriate 'add' or 'remove' commands
-     * to rectify their differences.
+     * to rectify their differences.  Order of Sets does not matter (two equal Sets do
+     * not have to be in the same order).
      */
     private static void compareSets(Delta delta, Collection<Delta> deltas, LinkedList<Delta> stack, ID idFetcher)
     {
-        Set srcSet = (Set) delta.srcValue;
-        Set targetSet = (Set) delta.targetValue;
+        Set<?> srcSet = (Set<?>) delta.srcValue;
+        Set<?> targetSet = (Set<?>) delta.targetValue;
 
         // Create ID to Object map for target Set
-        Map targetIdToValue = new HashMap();
+        Map<Object, Object> targetIdToValue = new HashMap<>();
         for (Object targetValue : targetSet)
         {
             if (isIdObject(targetValue, idFetcher))
@@ -678,7 +754,7 @@ public class GraphComparator
             }
         }
 
-        Map srcIdToValue = new HashMap();
+        Map<Object, Object> srcIdToValue = new HashMap<>();
         String sysId = "(" + System.identityHashCode(srcSet) + ").remove(";
         for (Object srcValue : srcSet)
         {
@@ -734,13 +810,13 @@ public class GraphComparator
                 }
             }
         }
-
-        // TODO: If LinkedHashSet, may need to issue commands to reorder...
     }
 
     /**
      * Deeply compare two Maps and generate the appropriate 'put' or 'remove' commands
-     * to rectify their differences.
+     * to rectify their differences.  Order of Maps des not matter from an equality standpoint.
+     * So for example, a TreeMap and a HashMap are considered equal (no Deltas) if they contain
+     * the same entries, regardless of order.
      */
     private static void compareMaps(Delta delta, Collection<Delta> deltas, LinkedList<Delta> stack, ID idFetcher)
     {
@@ -751,7 +827,7 @@ public class GraphComparator
         // If the key exists in both, then the value must tested for equivalence.  If !equal, then a PUT command
         // is created to re-associate target value to key.
         final String sysId = "(" + System.identityHashCode(srcMap) + ')';
-        for (Map.Entry entry : srcMap.entrySet())
+        for (Map.Entry<Object, Object> entry : srcMap.entrySet())
         {
             Object srcKey = entry.getKey();
             Object srcValue = entry.getValue();
@@ -764,7 +840,7 @@ public class GraphComparator
                 {   // Null value in either source or target
                     if (srcValue != targetValue)
                     {   // Value differed, must create PUT command to overwrite source value associated to key
-                        addMapPutDelta(delta, deltas, srcPtr, targetValue, srcKey);
+                        addMapPutDelta(delta, deltas, srcPtr, srcValue, targetValue, srcKey);
                     }
                 }
                 else if (isIdObject(srcValue, idFetcher) && isIdObject(targetValue, idFetcher))
@@ -775,12 +851,12 @@ public class GraphComparator
                     }
                     else
                     {   // Different ID associated to same key, must create PUT command to overwrite source value associated to key
-                        addMapPutDelta(delta, deltas, srcPtr, targetValue, srcKey);
+                        addMapPutDelta(delta, deltas, srcPtr, srcValue, targetValue, srcKey);
                     }
                 }
                 else if (!DeepEquals.deepEquals(srcValue, targetValue))
                 {   // Non-null, non-ID value associated to key, and the two values are not equal.  Create PUT command to overwrite.
-                    addMapPutDelta(delta, deltas, srcPtr, targetValue, srcKey);
+                    addMapPutDelta(delta, deltas, srcPtr, srcValue, targetValue, srcKey);
                 }
             }
             else
@@ -791,7 +867,7 @@ public class GraphComparator
             }
         }
 
-        for (Map.Entry entry : targetMap.entrySet())
+        for (Map.Entry<Object, Object> entry : targetMap.entrySet())
         {
             Object targetKey = entry.getKey();
             String srcPtr = sysId + "['" + System.identityHashCode(targetKey) + "']";
@@ -803,12 +879,11 @@ public class GraphComparator
                 deltas.add(putDelta);
             }
         }
-        // TODO: If LinkedHashMap, may need to issue commands to reorder...
     }
 
-    private static void addMapPutDelta(Delta delta, Collection<Delta> deltas, String srcPtr, Object targetValue, Object key)
+    private static void addMapPutDelta(Delta delta, Collection<Delta> deltas, String srcPtr, Object srcValue, Object targetValue, Object key)
     {
-        Delta putDelta = new Delta(delta.id, delta.fieldName, srcPtr, null, targetValue, key);
+        Delta putDelta = new Delta(delta.id, delta.fieldName, srcPtr, srcValue, targetValue, key);
         putDelta.setCmd(MAP_PUT);
         deltas.add(putDelta);
     }
@@ -819,8 +894,8 @@ public class GraphComparator
      */
     private static void compareLists(Delta delta, Collection<Delta> deltas, LinkedList<Delta> stack, ID idFetcher)
     {
-        List srcList = (List) delta.srcValue;
-        List targetList = (List) delta.targetValue;
+        List<Object> srcList = (List<Object>) delta.srcValue;
+        List<Object> targetList = (List<Object>) delta.targetValue;
         int srcLen = srcList.size();
         int targetLen = targetList.size();
 
@@ -902,15 +977,11 @@ public class GraphComparator
     public static List<DeltaError> applyDelta(Object source, List<Delta> commands, final ID idFetcher, DeltaProcessor deltaProcessor, boolean ... failFast)
     {
         // Index all objects in source graph
-        final Map srcMap = new HashMap();
-        Traverser.traverse(source, new Traverser.Visitor()
-        {
-            public void process(Object o)
+        final Map<Object, Object> srcMap = new HashMap<>();
+        Traverser.traverse(source, o -> {
+            if (isIdObject(o, idFetcher))
             {
-                if (isIdObject(o, idFetcher))
-                {
-                    srcMap.put(idFetcher.getId(o), o);
-                }
+                srcMap.put(idFetcher.getId(o), o);
             }
         });
 
@@ -931,7 +1002,7 @@ public class GraphComparator
                 continue;
             }
 
-            Map<String, Field> fields = ReflectionUtils.getDeepDeclaredFieldMap(srcValue.getClass());
+            Map<String, Field> fields = ReflectionUtils.getAllDeclaredFieldsMap(srcValue.getClass());
             Field field = fields.get(delta.fieldName);
             if (field == null && OBJECT_ORPHAN != delta.cmd)
             {
@@ -1101,25 +1172,25 @@ public class GraphComparator
 
         public void processSetAdd(Object source, Field field, Delta delta)
         {
-            Set set = (Set) Helper.getFieldValueAs(source, field, Set.class, delta);
+            Set<Object> set = (Set<Object>) Helper.getFieldValueAs(source, field, Set.class, delta);
             set.add(delta.getTargetValue());
         }
 
         public void processSetRemove(Object source, Field field, Delta delta)
         {
-            Set set = (Set) Helper.getFieldValueAs(source, field, Set.class, delta);
+            Set<Object> set = (Set<Object>) Helper.getFieldValueAs(source, field, Set.class, delta);
             set.remove(delta.getSourceValue());
         }
 
         public void processMapPut(Object source, Field field, Delta delta)
         {
-            Map map = (Map) Helper.getFieldValueAs(source, field, Map.class, delta);
+            Map<Object, Object> map = (Map<Object, Object>) Helper.getFieldValueAs(source, field, Map.class, delta);
             map.put(delta.optionalKey, delta.getTargetValue());
         }
 
         public void processMapRemove(Object source, Field field, Delta delta)
         {
-            Map map = (Map) Helper.getFieldValueAs(source, field, Map.class, delta);
+            Map<Object, Object> map = (Map<Object, Object>) Helper.getFieldValueAs(source, field, Map.class, delta);
             map.remove(delta.optionalKey);
         }
 
@@ -1148,7 +1219,7 @@ public class GraphComparator
 
         public void processListSetElement(Object source, Field field, Delta delta)
         {
-            List list = (List) Helper.getFieldValueAs(source, field, List.class, delta);
+            List<Object> list = (List<Object>) Helper.getFieldValueAs(source, field, List.class, delta);
             int pos = Helper.getResizeValue(delta);
             int listLen = list.size();
 

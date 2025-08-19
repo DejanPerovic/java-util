@@ -1,9 +1,10 @@
 package com.cedarsoftware.util;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * @author John DeRegnaucourt (john@cedarsoftware.com)
+ * @author John DeRegnaucourt (jdereg@gmail.com)
  *         <br>
  *         Copyright (c) Cedar Software LLC
  *         <br><br>
@@ -11,7 +12,7 @@ import org.junit.Test;
  *         you may not use this file except in compliance with the License.
  *         You may obtain a copy of the License at
  *         <br><br>
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *         <a href="http://www.apache.org/licenses/LICENSE-2.0">License</a>
  *         <br><br>
  *         Unless required by applicable law or agreed to in writing, software
  *         distributed under the License is distributed on an "AS IS" BASIS,
@@ -50,5 +51,67 @@ public class TestUtilTest
         assert TestUtil.checkContainsIgnoreCase("This is the source string to test.", "Source", "string", "Test");
         assert !TestUtil.checkContainsIgnoreCase("This is the source string to test.", "Source", "string", "Text");
         assert !TestUtil.checkContainsIgnoreCase("This is the source string to test.", "Test", "Source", "string");
+    }
+
+    @Test
+    public void testIsReleaseModeDefaultFalse()
+    {
+        String original = System.getProperty("performRelease");
+        System.clearProperty("performRelease");
+        try
+        {
+            assertFalse(TestUtil.isReleaseMode());
+        }
+        finally
+        {
+            if (original != null)
+            {
+                System.setProperty("performRelease", original);
+            }
+        }
+    }
+
+    @Test
+    public void testIsReleaseModeTrue()
+    {
+        String original = System.getProperty("performRelease");
+        System.setProperty("performRelease", "true");
+        try
+        {
+            assertTrue(TestUtil.isReleaseMode());
+        }
+        finally
+        {
+            if (original == null)
+            {
+                System.clearProperty("performRelease");
+            }
+            else
+            {
+                System.setProperty("performRelease", original);
+            }
+        }
+    }
+
+    @Test
+    public void testIsReleaseModeExplicitFalse()
+    {
+        String original = System.getProperty("performRelease");
+        System.setProperty("performRelease", "false");
+        try
+        {
+            assertFalse(TestUtil.isReleaseMode());
+        }
+        finally
+        {
+            if (original == null)
+            {
+                System.clearProperty("performRelease");
+            }
+            else
+            {
+                System.setProperty("performRelease", original);
+            }
+        }
     }
 }

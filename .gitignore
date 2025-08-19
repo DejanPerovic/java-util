@@ -8,3 +8,13 @@ CVS/
 .classpath
 .project
 .settings/
+.nondex
+
+# Compiled class files
+*.class
+
+# Claude-specific documentation files
+CLAUDE.md
+CODE_REVIEW.md
+CONVERTER_ROADMAP.md
+RELEASE_PROCESS.md

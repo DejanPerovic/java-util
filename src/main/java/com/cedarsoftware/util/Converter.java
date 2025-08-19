@@ -2,20 +2,152 @@ package com.cedarsoftware.util;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
 import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
 import java.util.Calendar;
+import java.util.Collection;
 import java.util.Date;
-import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import com.cedarsoftware.util.convert.CommonValues;
+import com.cedarsoftware.util.convert.Convert;
+import com.cedarsoftware.util.convert.DefaultConverterOptions;
+
 /**
- * Handy conversion utilities.  Convert from primitive to other primitives, plus support for Date, TimeStamp SQL Date,
- * and the Atomic's.
+ * Instance conversion utility for converting objects between various types.
+ * <p>
+ * Supports conversion from primitive types to their corresponding wrapper classes, Number classes,
+ * Date and Time classes (e.g., {@link Date}, {@link Timestamp}, {@link LocalDate}, {@link LocalDateTime},
+ * {@link ZonedDateTime}, {@link Calendar}), {@link BigInteger}, {@link BigDecimal}, Atomic classes
+ * (e.g., {@link AtomicBoolean}, {@link AtomicInteger}, {@link AtomicLong}), {@link Class}, {@link UUID},
+ * {@link String}, Collection classes (e.g., {@link List}, {@link Set}, {@link Map}), ByteBuffer, CharBuffer,
+ * and other related classes.
+ * </p>
+ * <p>
+ * The Converter includes thousands of built-in conversions. Use the {@link #getSupportedConversions()}
+ * API to view all source-to-target conversion mappings.
+ * </p>
+ * <p>
+ * The primary API is {@link #convert(Object, Class)}. For example:
+ * <pre>{@code
+ *     Long x = convert("35", Long.class);
+ *     Date d = convert("2015/01/01", Date.class);
+ *     int y = convert(45.0, int.class);
+ *     String dateStr = convert(date, String.class);
+ *     String dateStr = convert(calendar, String.class);
+ *     Short t = convert(true, short.class);     // returns (short) 1 or 0
+ *     Long time = convert(calendar, long.class); // retrieves calendar's time as long
+ *     Map<String, Object> map = Map.of("_v", "75.0");
+ *     Double value = convert(map, double.class); // Extracts "_v" key and converts it
+ * }</pre>
+ * </p>
+ * <p>
+ * <strong>Null Handling:</strong> If a null value is passed as the source, the Converter returns:
+ * <ul>
+ *     <li>null for object types</li>
+ *     <li>0 for numeric primitive types</li>
+ *     <li>false for boolean primitives</li>
+ *     <li>'\u0000' for char primitives</li>
+ * </ul>
+ * </p>
+ * <p>
+ * <strong>Map Conversions:</strong> A {@code Map} can be converted to almost all supported JDK data classes.
+ * For example, {@link UUID} can be converted to/from a {@code Map} with keys like "mostSigBits" and "leastSigBits".
+ * Date/Time classes expect specific keys such as "time" or "nanos". For other classes, the Converter typically
+ * looks for a "value" key to source the conversion.
+ * </p>
+ * <p>
+ * <strong>Extensibility:</strong> Additional conversions can be added by specifying the source class, target class,
+ * and a conversion function (e.g., a lambda). Custom converters can be registered using ConverterOptions 
+ * when creating a Converter instance. This allows for the inclusion of new Collection types and other custom types as needed.
+ * </p>
  *
- * @author John DeRegnaucourt (john@cedarsoftware.com)
+ * <p>
+ * <strong>Supported Collection Conversions:</strong>
+ * The Converter supports conversions involving various Collection types, including but not limited to:
+ * <ul>
+ *     <li>{@link List}</li>
+ *     <li>{@link Set}</li>
+ *     <li>{@link Map}</li>
+ *     <li>{@link Collection}</li>
+ *     <li>Arrays (e.g., {@code byte[]}, {@code char[]}, {@code ByteBuffer}, {@code CharBuffer})</li>
+ * </ul>
+ * These conversions facilitate seamless transformation between different Collection types and other supported classes.
+ * </p>
+ *
+ * <p>
+ * <strong>Time Conversion Precision Rules:</strong>
+ * The Converter applies different precision rules based on the internal capabilities of time classes:
+ * <ul>
+ *     <li><strong>Legacy time classes</strong> (Calendar, Date, java.sql.Date): Convert to/from integer types 
+ *         (long, BigInteger) using <strong>millisecond precision</strong> to match their internal storage</li>
+ *     <li><strong>Modern time classes</strong> (Instant, ZonedDateTime, LocalDateTime, etc.): Convert to/from 
+ *         integer types using <strong>nanosecond precision</strong> to match their internal storage</li>
+ *     <li><strong>All time classes</strong>: Convert to/from decimal types (double, BigDecimal) using 
+ *         <strong>fractional seconds</strong> for consistent decimal representation</li>
+ * </ul>
+ * Examples:
+ * <pre>{@code
+ *     Calendar cal = Calendar.getInstance();
+ *     long millis = converter.convert(cal, long.class);        // milliseconds
+ *     BigInteger bigInt = converter.convert(cal, BigInteger.class); // milliseconds
+ *     double seconds = converter.convert(cal, double.class);   // fractional seconds
+ *     
+ *     Instant instant = Instant.now();
+ *     long nanos = converter.convert(instant, long.class);     // nanoseconds
+ *     BigInteger bigNanos = converter.convert(instant, BigInteger.class); // nanoseconds
+ *     double seconds = converter.convert(instant, double.class); // fractional seconds
+ * }</pre>
+ * This ensures logical consistency and round-trip compatibility based on each time class's native precision.
+ * </p>
+ *
+ * <p>
+ * <strong>Usage Example:</strong>
+ * <pre>{@code
+ *     ConverterOptions options = new ConverterOptions();
+ *     Converter converter = new Converter(options);
+ *
+ *     // Convert String to Integer
+ *     Integer number = converter.convert("123", Integer.class);
+ *
+ *     // Convert Enum to String
+ *     Day day = Day.MONDAY;
+ *     String dayStr = converter.convert(day, String.class);
+ *
+ *     // Convert Object[], String[], Collection, and primitive Arrays to EnumSet
+ *     Object[] array = {Day.MONDAY, Day.WEDNESDAY, "FRIDAY", 4};
+ *     EnumSet<Day> daySet = (EnumSet<Day>)(Object)converter.convert(array, Day.class);
+ *
+ *     Enum, String, and Number value in the source collection/array is properly converted
+ *     to the correct Enum type and added to the returned EnumSet. Null values inside the
+ *     source (Object[], Collection) are skipped.
+ *
+ *     When converting arrays or collections to EnumSet, you must use a double cast due to Java's
+ *     type system and generic type erasure. The cast is safe as the converter guarantees return of
+ *     an EnumSet when converting arrays/collections to enum types.
+ *
+ *     // Add a custom conversion from String to CustomType
+ *     converter.addConversion(String.class, CustomType.class, (from, conv) -> new CustomType(from));
+ *
+ *     // Convert using the custom converter
+ *     CustomType custom = converter.convert("customValue", CustomType.class);
+ * }</pre>
+ * </p>
+ *
+ * @author
+ *         <br>
+ *         John DeRegnaucourt (jdereg@gmail.com)
  *         <br>
  *         Copyright (c) Cedar Software LLC
  *         <br><br>
@@ -23,7 +155,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *         you may not use this file except in compliance with the License.
  *         You may obtain a copy of the License at
  *         <br><br>
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *         <a href="http://www.apache.org/licenses/LICENSE-2.0">License</a>
  *         <br><br>
  *         Unless required by applicable law or agreed to in writing, software
  *         distributed under the License is distributed on an "AS IS" BASIS,
@@ -33,290 +165,8 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public final class Converter
 {
-    private static final Byte BYTE_ZERO = (byte)0;
-    private static final Byte BYTE_ONE = (byte)1;
-    private static final Short SHORT_ZERO = (short)0;
-    private static final Short SHORT_ONE = (short)1;
-    private static final Integer INTEGER_ZERO = 0;
-    private static final Integer INTEGER_ONE = 1;
-    private static final Long LONG_ZERO = 0L;
-    private static final Long LONG_ONE = 1L;
-    private static final Float FLOAT_ZERO = 0.0f;
-    private static final Float FLOAT_ONE = 1.0f;
-    private static final Double DOUBLE_ZERO = 0.0d;
-    private static final Double DOUBLE_ONE = 1.0d;
-    private static final Map<Class, Work> conversion = new LinkedHashMap<>();
-    private static final Map<Class, Work> conversionToString = new LinkedHashMap<>();
-
-    private interface Work
-    {
-        Object convert(Object fromInstance);
-    }
-    
-    static
-    {
-        conversion.put(String.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToString(fromInstance);
-            }
-        });
-
-        conversion.put(long.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToLong(fromInstance);
-            }
-        });
-
-        conversion.put(Long.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToLong(fromInstance);
-            }
-        });
-
-        conversion.put(int.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToInteger(fromInstance);
-            }
-        });
-
-        conversion.put(Integer.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToInteger(fromInstance);
-            }
-        });
-
-        conversion.put(Calendar.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToCalendar(fromInstance);
-            }
-        });
-        
-        conversion.put(Date.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToDate(fromInstance);
-            }
-        });
-
-        conversion.put(BigDecimal.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToBigDecimal(fromInstance);
-            }
-        });
-
-        conversion.put(BigInteger.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToBigInteger(fromInstance);
-            }
-        });
-
-        conversion.put(java.sql.Date.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToSqlDate(fromInstance);
-            }
-        });
-
-        conversion.put(Timestamp.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToTimestamp(fromInstance);
-            }
-        });
-
-        conversion.put(AtomicInteger.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToAtomicInteger(fromInstance);
-            }
-        });
-
-        conversion.put(AtomicLong.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToAtomicLong(fromInstance);
-            }
-        });
-
-        conversion.put(AtomicBoolean.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToAtomicBoolean(fromInstance);
-            }
-        });
-
-        conversion.put(boolean.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToBoolean(fromInstance);
-            }
-        });
-
-        conversion.put(Boolean.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToBoolean(fromInstance);
-            }
-        });
-
-        conversion.put(double.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToDouble(fromInstance);
-            }
-        });
-
-        conversion.put(Double.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToDouble(fromInstance);
-            }
-        });
-
-        conversion.put(byte.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToByte(fromInstance);
-            }
-        });
-
-        conversion.put(Byte.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToByte(fromInstance);
-            }
-        });
-
-        conversion.put(float.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToFloat(fromInstance);
-            }
-        });
-
-        conversion.put(Float.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToFloat(fromInstance);
-            }
-        });
-
-        conversion.put(short.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToShort(fromInstance);
-            }
-        });
-
-        conversion.put(Short.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return convertToShort(fromInstance);
-            }
-        });
-
-        conversionToString.put(String.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return fromInstance;
-            }
-        });
-
-        conversionToString.put(BigDecimal.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                BigDecimal bd = convertToBigDecimal(fromInstance);
-                return bd.stripTrailingZeros().toPlainString();
-            }
-        });
-
-        conversionToString.put(BigInteger.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                BigInteger bi = convertToBigInteger(fromInstance);
-                return bi.toString();
-            }
-        });
-
-        Work toString = new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return fromInstance.toString();
-            }
-        };
-
-        conversionToString.put(Boolean.class, toString);
-        conversionToString.put(AtomicBoolean.class, toString);
-        conversionToString.put(Byte.class, toString);
-        conversionToString.put(Short.class, toString);
-        conversionToString.put(Integer.class, toString);
-        conversionToString.put(AtomicInteger.class, toString);
-        conversionToString.put(Long.class, toString);
-        conversionToString.put(AtomicLong.class, toString);
-
-        Work toNoExpString = new Work()
-        {
-            public Object convert(Object fromInstance)
-            {   // Should eliminate possibility of 'e' (exponential) notation
-                return fromInstance.toString();
-            }
-        };
-
-        conversionToString.put(Double.class, toNoExpString);
-        conversionToString.put(Float.class, toNoExpString);
-
-        conversionToString.put(Date.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return SafeSimpleDateFormat.getDateFormat("yyyy-MM-dd'T'HH:mm:ss").format(fromInstance);
-            }
-        });
-
-        conversionToString.put(Character.class, new Work()
-        {
-            public Object convert(Object fromInstance)
-            {
-                return "" + fromInstance;
-            }
-        });
-    }
+    private static final com.cedarsoftware.util.convert.Converter instance =
+            new com.cedarsoftware.util.convert.Converter(new DefaultConverterOptions());
 
     /**
      * Static utility class.
@@ -324,776 +174,658 @@ public final class Converter
     private Converter() { }
 
     /**
-     * Turn the passed in value to the class indicated.  This will allow, for
-     * example, a String value to be passed in and have it coerced to a Long.
-     * <pre>
-     *     Examples:
-     *     Long x = convert("35", Long.class);
-     *     Date d = convert("2015/01/01", Date.class)
-     *     int y = convert(45.0, int.class)
-     *     String date = convert(date, String.class)
-     *     String date = convert(calendar, String.class)
-     *     Short t = convert(true, short.class);     // returns (short) 1 or  (short) 0
-     *     Long date = convert(calendar, long.class); // get calendar's time into long
-     * </pre>
-     * @param fromInstance A value used to create the targetType, even though it may
-     * not (most likely will not) be the same data type as the targetType
-     * @param toType Class which indicates the targeted (final) data type.
-     * Please note that in addition to the 8 Java primitives, the targeted class
-     * can also be Date.class, String.class, BigInteger.class, BigDecimal.class, and
-     * the Atomic classes.  The primitive class can be either primitive class or primitive
-     * wrapper class, however, the returned value will always [obviously] be a primitive
-     * wrapper.
-     * @return An instanceof targetType class, based upon the value passed in.
+     * Provides access to the default {@link com.cedarsoftware.util.convert.Converter}
+     * instance used by this class.
+     * <p>
+     * The returned instance is created with {@link DefaultConverterOptions} and is
+     * the same one used by all static conversion APIs. It is immutable and
+     * thread-safe.
+     * </p>
+     *
+     * @return the default {@code Converter} instance
      */
-    public static <T> T convert(Object fromInstance, Class<T> toType)
-    {
-        if (toType == null)
-        {
-            throw new IllegalArgumentException("Type cannot be null in Converter.convert(value, type)");
-        }
-
-        Work work = conversion.get(toType);
-        if (work != null)
-        {
-            return (T) work.convert(fromInstance);
-        }
-        throw new IllegalArgumentException("Unsupported type '" + toType.getName() + "' for conversion");
+    static com.cedarsoftware.util.convert.Converter getInstance() {
+        return instance;
     }
 
-    public static String convertToString(Object fromInstance)
-    {
-        if (fromInstance == null)
-        {
-            return null;
-        }
-        Class clazz = fromInstance.getClass();
-        Work work = conversionToString.get(clazz);
-        if (work != null)
-        {
-            return (String) work.convert(fromInstance);
-        }
-        else if (fromInstance instanceof Calendar)
-        {   // Done this way (as opposed to putting a closure in conversionToString) because Calendar.class is not == to GregorianCalendar.class
-            return SafeSimpleDateFormat.getDateFormat("yyyy-MM-dd'T'HH:mm:ss").format(((Calendar)fromInstance).getTime());
-        }
-        else if (fromInstance instanceof Enum)
-        {
-            return ((Enum)fromInstance).name();
-        }
-        return nope(fromInstance, "String");
+    /**
+     * Converts the given source object to the specified target type.
+     * <p>
+     * The {@code convert} method serves as the primary API for transforming objects between various types.
+     * It supports a wide range of conversions, including primitive types, wrapper classes, numeric types,
+     * date and time classes, collections, and custom objects. Additionally, it allows for extensibility
+     * by enabling the registration of custom converters.
+     * </p>
+     * <p>
+     * <strong>Key Features:</strong>
+     * <ul>
+     *     <li><b>Wide Range of Supported Types:</b> Supports conversion between Java primitives, their corresponding
+     *         wrapper classes, {@link Number} subclasses, date and time classes (e.g., {@link Date}, {@link LocalDateTime}),
+     *         collections (e.g., {@link List}, {@link Set}, {@link Map}), {@link UUID}, and more.</li>
+     *     <li><b>Null Handling:</b> Gracefully handles {@code null} inputs by returning {@code null} for object types,
+     *         default primitive values (e.g., 0 for numeric types, {@code false} for boolean), and default characters.</li>
+     *     <li><b>Inheritance-Based Conversions:</b> Automatically considers superclass and interface hierarchies
+     *         to find the most suitable converter when a direct conversion is not available.</li>
+     *     <li><b>Thread-Safe:</b> Designed to be thread-safe, allowing concurrent conversions without compromising data integrity.</li>
+     * </ul>
+     * </p>
+     *
+     * <h3>Usage Examples:</h3>
+     * <pre>{@code
+     *     ConverterOptions options = new ConverterOptions();
+     *     Converter converter = new Converter(options);
+     *
+     *     // Example 1: Convert String to Integer
+     *     String numberStr = "123";
+     *     Integer number = converter.convert(numberStr, Integer.class);
+     *     LOG.info("Converted Integer: " + number); // Output: Converted Integer: 123
+     *
+     *     // Example 2: Convert String to Date
+     *     String dateStr = "2024-04-27";
+     *     LocalDate date = converter.convert(dateStr, LocalDate.class);
+     *     LOG.info("Converted Date: " + date); // Output: Converted Date: 2024-04-27
+     *
+     *     // Example 3: Convert Enum to String
+     *     Day day = Day.MONDAY;
+     *     String dayStr = converter.convert(day, String.class);
+     *     LOG.info("Converted Day: " + dayStr); // Output: Converted Day: MONDAY
+     *
+     *     // Example 4: Convert Array to List
+     *     String[] stringArray = {"apple", "banana", "cherry"};
+     *     List<String> stringList = converter.convert(stringArray, List.class);
+     *     LOG.info("Converted List: " + stringList); // Output: Converted List: [apple, banana, cherry]
+     *
+     *     // Example 5: Convert Map to UUID
+     *     Map<String, Object> uuidMap = Map.of("mostSigBits", 123456789L, "leastSigBits", 987654321L);
+     *     UUID uuid = converter.convert(uuidMap, UUID.class);
+     *     LOG.info("Converted UUID: " + uuid); // Output: Converted UUID: 00000000-075b-cd15-0000-0000003ade68
+     *
+     *     // Example 6: Convert Object[], String[], Collection, and primitive Arrays to EnumSet
+     *     Object[] array = {Day.MONDAY, Day.WEDNESDAY, "FRIDAY", 4};
+     *     EnumSet<Day> daySet = (EnumSet<Day>)(Object)converter.convert(array, Day.class);
+     *
+     *     Enum, String, and Number value in the source collection/array is properly converted
+     *     to the correct Enum type and added to the returned EnumSet. Null values inside the
+     *     source (Object[], Collection) are skipped.
+     *
+     *     When converting arrays or collections to EnumSet, you must use a double cast due to Java's
+     *     type system and generic type erasure. The cast is safe as the converter guarantees return of
+     *     an EnumSet when converting arrays/collections to enum types.
+     *
+     *     // Example 7: Register and Use a Custom Converter
+     *     // Custom converter to convert String to CustomType
+     *     converter.addConversion(String.class, CustomType.class, (from, conv) -> new CustomType(from));
+     *
+     *     String customStr = "customValue";
+     *     CustomType custom = converter.convert(customStr, CustomType.class);
+     *     LOG.info("Converted CustomType: " + custom); // Output: Converted CustomType: CustomType{value='customValue'}
+     * }
+     * </pre>
+     *
+     * <h3>Parameter Descriptions:</h3>
+     * <ul>
+     *     <li><b>from:</b> The source object to be converted. This can be any object, including {@code null}.
+     *         The actual type of {@code from} does not need to match the target type; the Converter will attempt to
+     *         perform the necessary transformation.</li>
+     *     <li><b>toType:</b> The target class to which the source object should be converted. This parameter
+     *         specifies the desired output type. It can be a primitive type (e.g., {@code int.class}), a wrapper class
+     *         (e.g., {@link Integer}.class), or any other supported class.</li>
+     * </ul>
+     *
+     * <h3>Return Value:</h3>
+     * <p>
+     * Returns an instance of the specified target type {@code toType}, representing the converted value of the source object {@code from}.
+     * If {@code from} is {@code null}, the method returns:
+     * <ul>
+     *     <li>{@code null} for non-primitive target types.</li>
+     *     <li>Default primitive values for primitive target types (e.g., 0 for numeric types, {@code false} for {@code boolean}, '\u0000' for {@code char}).</li>
+     * </ul>
+     * </p>
+     *
+     * <h3>Exceptions:</h3>
+     * <ul>
+     *     <li><b>IllegalArgumentException:</b> Thrown if the conversion from the source type to the target type is not supported,
+     *         or if the target type {@code toType} is {@code null}.</li>
+     *     <li><b>RuntimeException:</b> Any underlying exception thrown during the conversion process is propagated as a {@code RuntimeException}.</li>
+     * </ul>
+     *
+     * <h3>Supported Conversions:</h3>
+     * <p>
+     * The Converter supports a vast array of conversions, including but not limited to:
+     * <ul>
+     *     <li><b>Primitives and Wrappers:</b> Convert between Java primitive types (e.g., {@code int}, {@code boolean}) and their corresponding wrapper classes (e.g., {@link Integer}, {@link Boolean}).</li>
+     *     <li><b>Numbers:</b> Convert between different numeric types (e.g., {@link Integer} to {@link Double}, {@link BigInteger} to {@link BigDecimal}).</li>
+     *     <li><b>Date and Time:</b> Convert between various date and time classes (e.g., {@link String} to {@link LocalDate}, {@link Date} to {@link Instant}, {@link Calendar} to {@link ZonedDateTime}).</li>
+     *     <li><b>Collections:</b> Convert between different collection types (e.g., arrays to {@link List}, {@link Set} to {@link Map}, {@link StringBuilder} to {@link String}).</li>
+     *     <li><b>Custom Objects:</b> Convert between complex objects (e.g., {@link UUID} to {@link Map}, {@link Class} to {@link String}, custom types via user-defined converters).</li>
+     *     <li><b>Buffer Types:</b> Convert between buffer types (e.g., {@link ByteBuffer} to {@link String}, {@link CharBuffer} to {@link Byte}[]).</li>
+     * </ul>
+     * </p>
+     *
+     * <h3>Performance Considerations:</h3>
+     * <p>
+     * The Converter uses caching mechanisms to store and retrieve converters, ensuring efficient performance
+     * even with a large number of conversion operations. However, registering an excessive number of custom converters
+     * may impact memory usage. It is recommended to register only necessary converters to maintain optimal performance.
+     * </p>
+     *
+     * @param from   The source object to be converted. Can be any object, including {@code null}.
+     * @param toType The target class to which the source object should be converted. Must not be {@code null}.
+     * @param <T>    The type of the target object.
+     * @return An instance of {@code toType} representing the converted value of {@code from}.
+     * @throws IllegalArgumentException if {@code toType} is {@code null} or if the conversion is not supported.
+     * @see #getSupportedConversions()
+     */
+    public static <T> T convert(Object from, Class<T> toType) {
+        return instance.convert(from, toType);
     }
 
-    public static BigDecimal convertToBigDecimal(Object fromInstance)
-    {
-        if (fromInstance == null)
-        {
-            return BigDecimal.ZERO;
-        }
-
-        try
-        {
-            if (fromInstance instanceof String)
-            {
-                if (StringUtilities.isEmpty((String)fromInstance))
-                {
-                    return BigDecimal.ZERO;
-                }
-                return new BigDecimal(((String) fromInstance).trim());
-            }
-            else if (fromInstance instanceof BigDecimal)
-            {
-                return (BigDecimal)fromInstance;
-            }
-            else if (fromInstance instanceof BigInteger)
-            {
-                return new BigDecimal((BigInteger) fromInstance);
-            }
-            else if (fromInstance instanceof Number)
-            {
-                return new BigDecimal(((Number) fromInstance).doubleValue());
-            }
-            else if (fromInstance instanceof Boolean)
-            {
-                return (Boolean) fromInstance ? BigDecimal.ONE : BigDecimal.ZERO;
-            }
-            else if (fromInstance instanceof AtomicBoolean)
-            {
-                return ((AtomicBoolean) fromInstance).get() ? BigDecimal.ONE : BigDecimal.ZERO;
-            }
-            else if (fromInstance instanceof Date)
-            {
-                return new BigDecimal(((Date)fromInstance).getTime());
-            }
-            else if (fromInstance instanceof Calendar)
-            {
-                return new BigDecimal(((Calendar)fromInstance).getTime().getTime());
-            }
-        }
-        catch(Exception e)
-        {
-            throw new IllegalArgumentException("value [" + name(fromInstance) + "] could not be converted to a 'BigDecimal'", e);
-        }
-        nope(fromInstance, "BigDecimal");
-        return null;
+    /**
+     * Adds a new conversion function for converting from one type to another in the global static context.
+     * This conversion will be available to all static {@link #convert(Object, Class)} calls but will NOT 
+     * be visible to individual Converter instances created via {@code new Converter()}.
+     *
+     * <p>This method provides complete isolation between static and instance conversion contexts:
+     * <ul>
+     *   <li>Static conversions (added via this method) are only accessible to static {@link #convert} calls</li>
+     *   <li>Instance conversions (added via {@link com.cedarsoftware.util.convert.Converter#addConversion}) 
+     *       are only accessible to that specific instance</li>
+     *   <li>Factory conversions (built-in conversions) are available to both static and instance contexts</li>
+     * </ul></p>
+     *
+     * <p>This isolation prevents global pollution where one application's custom conversions could 
+     * interfere with another application's conversion behavior.</p>
+     *
+     * @param source           The source class (type) to convert from.
+     * @param target           The target class (type) to convert to.
+     * @param conversionMethod A method that converts an instance of the source type to an instance of the target type.
+     * @return The previous conversion method associated with the source and target types in the static context, or {@code null} if no conversion existed.
+     * @see com.cedarsoftware.util.convert.Converter#addConversion(Convert, Class, Class) for instance-specific conversions
+     */
+    public static Convert<?> addConversion(Class<?> source, Class<?> target, Convert<?> conversionMethod) {
+        return instance.addConversion(conversionMethod, source, target);
     }
 
-    public static BigInteger convertToBigInteger(Object fromInstance)
-    {
-        if (fromInstance == null)
-        {
-            return BigInteger.ZERO;
-        }
-        try
-        {
-            if (fromInstance instanceof String)
-            {
-                if (StringUtilities.isEmpty((String)fromInstance))
-                {
-                    return BigInteger.ZERO;
-                }
-                return new BigInteger(((String) fromInstance).trim());
-            }
-            else if (fromInstance instanceof BigInteger)
-            {
-                return (BigInteger) fromInstance;
-            }
-            else if (fromInstance instanceof BigDecimal)
-            {
-                return ((BigDecimal) fromInstance).toBigInteger();
-            }
-            else if (fromInstance instanceof Number)
-            {
-                return new BigInteger(Long.toString(((Number) fromInstance).longValue()));
-            }
-            else if (fromInstance instanceof Boolean)
-            {
-                return (Boolean) fromInstance ? BigInteger.ONE : BigInteger.ZERO;
-            }
-            else if (fromInstance instanceof AtomicBoolean)
-            {
-                return ((AtomicBoolean) fromInstance).get() ? BigInteger.ONE : BigInteger.ZERO;
-            }
-            else if (fromInstance instanceof Date)
-            {
-                return new BigInteger(Long.toString(((Date) fromInstance).getTime()));
-            }
-            else if (fromInstance instanceof Calendar)
-            {
-                return new BigInteger(Long.toString(((Calendar) fromInstance).getTime().getTime()));
-            }
-        }
-        catch(Exception e)
-        {
-            throw new IllegalArgumentException("value [" + name(fromInstance) + "] could not be converted to a 'BigInteger'", e);
-        }
-        nope(fromInstance, "BigInteger");
-        return null;
+    /**
+     * Determines whether a conversion from the specified source type to the target type is supported.
+     * For array-to-array conversions, this method verifies that both array conversion and component type
+     * conversions are supported.
+     *
+     * <p>The method checks three paths for conversion support:</p>
+     * <ol>
+     *   <li>Direct conversions as defined in the conversion maps</li>
+     *   <li>Collection/Array/EnumSet conversions - for array-to-array conversions, also verifies
+     *       that component type conversions are supported</li>
+     *   <li>Inherited conversions (via superclasses and implemented interfaces)</li>
+     * </ol>
+     *
+     * <p>For array conversions, this method performs a deep check to ensure both the array types
+     * and their component types can be converted. For example, when checking if a String[] can be
+     * converted to Integer[], it verifies both:</p>
+     * <ul>
+     *   <li>That array-to-array conversion is supported</li>
+     *   <li>That String-to-Integer conversion is supported for the components</li>
+     * </ul>
+     *
+     * @param source The source class type
+     * @param target The target class type
+     * @return true if the conversion is fully supported (including component type conversions for arrays),
+     *         false otherwise
+     */
+    public static boolean isConversionSupportedFor(Class<?> source, Class<?> target) {
+        return instance.isConversionSupportedFor(source, target);
     }
 
-    public static java.sql.Date convertToSqlDate(Object fromInstance)
-    {
-        if (fromInstance == null)
-        {
-            return null;
-        }
-        try
-        {
-            if (fromInstance instanceof java.sql.Date)
-            {   // Return a clone of the current date time because java.sql.Date is mutable.
-                return new java.sql.Date(((java.sql.Date)fromInstance).getTime());
-            }
-            else if (fromInstance instanceof Timestamp)
-            {
-                Timestamp timestamp = (Timestamp) fromInstance;
-                return new java.sql.Date(timestamp.getTime());
-            }
-            else if (fromInstance instanceof Date)
-            {   // convert from java.util.Date to java.sql.Date
-                return new java.sql.Date(((Date)fromInstance).getTime());
-            }
-            else if (fromInstance instanceof String)
-            {
-                Date date = DateUtilities.parseDate(((String) fromInstance).trim());
-                if (date == null)
-                {
-                    return null;
-                }
-                return new java.sql.Date(date.getTime());
-            }
-            else if (fromInstance instanceof Calendar)
-            {
-                return new java.sql.Date(((Calendar) fromInstance).getTime().getTime());
-            }
-            else if (fromInstance instanceof Long)
-            {
-                return new java.sql.Date((Long) fromInstance);
-            }
-            else if (fromInstance instanceof BigInteger)
-            {
-                return new java.sql.Date(((BigInteger)fromInstance).longValue());
-            }
-            else if (fromInstance instanceof BigDecimal)
-            {
-                return new java.sql.Date(((BigDecimal)fromInstance).longValue());
-            }
-            else if (fromInstance instanceof AtomicLong)
-            {
-                return new java.sql.Date(((AtomicLong) fromInstance).get());
-            }
-        }
-        catch(Exception e)
-        {
-            throw new IllegalArgumentException("value [" + name(fromInstance) + "] could not be converted to a 'java.sql.Date'", e);
-        }
-        nope(fromInstance, "java.sql.Date");
-        return null;
+    /**
+     * Overload of {@link #isConversionSupportedFor(Class, Class)} that checks a single
+     * class for conversion support using cached results.
+     *
+     * @param type the class to query
+     * @return {@code true} if the converter supports this class
+     */
+    public static boolean isConversionSupportedFor(Class<?> type) {
+        return instance.isConversionSupportedFor(type);
     }
 
-    public static Timestamp convertToTimestamp(Object fromInstance)
-    {
-        if (fromInstance == null)
-        {
-            return null;
-        }
-        try
-        {
-            if (fromInstance instanceof java.sql.Date)
-            {   // convert from java.sql.Date to java.util.Date
-                return new Timestamp(((java.sql.Date)fromInstance).getTime());
-            }
-            else if (fromInstance instanceof Timestamp)
-            {   // return a clone of the Timestamp because it is mutable
-                return new Timestamp(((Timestamp)fromInstance).getTime());
-            }
-            else if (fromInstance instanceof Date)
-            {
-                return new Timestamp(((Date) fromInstance).getTime());
-            }
-            else if (fromInstance instanceof String)
-            {
-                Date date = DateUtilities.parseDate(((String) fromInstance).trim());
-                if (date == null)
-                {
-                    return null;
-                }
-                return new Timestamp(date.getTime());
-            }
-            else if (fromInstance instanceof Calendar)
-            {
-                return new Timestamp(((Calendar) fromInstance).getTime().getTime());
-            }
-            else if (fromInstance instanceof Long)
-            {
-                return new Timestamp((Long) fromInstance);
-            }
-            else if (fromInstance instanceof BigInteger)
-            {
-                return new Timestamp(((BigInteger) fromInstance).longValue());
-            }
-            else if (fromInstance instanceof BigDecimal)
-            {
-                return new Timestamp(((BigDecimal) fromInstance).longValue());
-            }
-            else if (fromInstance instanceof AtomicLong)
-            {
-                return new Timestamp(((AtomicLong) fromInstance).get());
-            }
-        }
-        catch(Exception e)
-        {
-            throw new IllegalArgumentException("value [" + name(fromInstance) + "] could not be converted to a 'Timestamp'", e);
-        }
-        nope(fromInstance, "Timestamp");
-        return null;
+    /**
+     * Determines whether a conversion from the specified source type to the target type is supported,
+     * excluding any conversions involving arrays or collections.
+     *
+     * <p>The method is particularly useful when you need to verify that a conversion is possible
+     * between simple types without considering array or collection conversions. This can be helpful
+     * in scenarios where you need to validate component type conversions separately from their
+     * container types.</p>
+     *
+     * <p><strong>Example usage:</strong></p>
+     * <pre>{@code
+     * // Check if String can be converted to Integer
+     * boolean canConvert = Converter.isSimpleTypeConversionSupported(
+     *     String.class, Integer.class);  // returns true
+     *
+     * // Check array conversion (always returns false)
+     * boolean arrayConvert = Converter.isSimpleTypeConversionSupported(
+     *     String[].class, Integer[].class);  // returns false
+     *
+     * // Intentionally repeat source type (class) - will find identity conversion
+     * // Let's us know that it is a "simple" type (String, Date, Class, UUID, URL, Temporal type, etc.)
+     * boolean isSimpleType = Converter.isSimpleTypeConversionSupported(
+     *     ZonedDateTime.class, ZonedDateTime.class);
+     *
+     * // Check collection conversion (always returns false)
+     * boolean listConvert = Converter.isSimpleTypeConversionSupported(
+     *     List.class, Set.class);  // returns false
+     * }</pre>
+     *
+     * @param source The source class type to check
+     * @param target The target class type to check
+     * @return {@code true} if a non-collection conversion exists between the types,
+     *         {@code false} if either type is an array/collection or no conversion exists
+     * @see #isConversionSupportedFor(Class, Class)
+     */
+    public static boolean isSimpleTypeConversionSupported(Class<?> source, Class<?> target) {
+        return instance.isSimpleTypeConversionSupported(source, target);
     }
 
-    public static Date convertToDate(Object fromInstance)
-    {
-        if (fromInstance == null)
-        {
-            return null;
-        }
-        try
-        {
-            if (fromInstance instanceof String)
-            {
-                return DateUtilities.parseDate(((String) fromInstance).trim());
-            }
-            else if (fromInstance instanceof java.sql.Date)
-            {   // convert from java.sql.Date to java.util.Date
-                return new Date(((java.sql.Date)fromInstance).getTime());
-            }
-            else if (fromInstance instanceof Timestamp)
-            {
-                Timestamp timestamp = (Timestamp) fromInstance;
-                return new Date(timestamp.getTime());
-            }
-            else if (fromInstance instanceof Date)
-            {   // Return a clone, not the same instance because Dates are not immutable
-                return new Date(((Date)fromInstance).getTime());
-            }
-            else if (fromInstance instanceof Calendar)
-            {
-                return ((Calendar) fromInstance).getTime();
-            }
-            else if (fromInstance instanceof Long)
-            {
-                return new Date((Long) fromInstance);
-            }
-            else if (fromInstance instanceof BigInteger)
-            {
-                return new Date(((BigInteger)fromInstance).longValue());
-            }
-            else if (fromInstance instanceof BigDecimal)
-            {
-                return new Date(((BigDecimal)fromInstance).longValue());
-            }
-            else if (fromInstance instanceof AtomicLong)
-            {
-                return new Date(((AtomicLong) fromInstance).get());
-            }
-        }
-        catch(Exception e)
-        {
-            throw new IllegalArgumentException("value [" + name(fromInstance) + "] could not be converted to a 'Date'", e);
-        }
-        nope(fromInstance, "Date");
-        return null;
-    }
-
-    public static Calendar convertToCalendar(Object fromInstance)
-    {
-        Calendar calendar = Calendar.getInstance();
-        calendar.setTime(convertToDate(fromInstance));
-        return calendar;
+    /**
+     * Overload of {@link #isSimpleTypeConversionSupported(Class, Class)} for querying
+     * if a single class is treated as a simple type. Results are cached.
+     *
+     * @param type the class to check
+     * @return {@code true} if the class is a simple convertible type
+     */
+    public static boolean isSimpleTypeConversionSupported(Class<?> type) {
+        return instance.isSimpleTypeConversionSupported(type);
     }
     
+    /**
+     * Retrieves a map of all supported conversions, categorized by source and target classes.
+     * <p>
+     * The returned map's keys are source classes, and each key maps to a {@code Set} of target classes
+     * that the source can be converted to.
+     * </p>
+     *
+     * @return A {@code Map<Class<?>, Set<Class<?>>>} representing all supported conversions.
+     */
+    public static Map<Class<?>, Set<Class<?>>> allSupportedConversions() {
+        return instance.allSupportedConversions();
+    }
+
+    /**
+     * Retrieves a map of all supported conversions with class names instead of class objects.
+     * <p>
+     * The returned map's keys are source class names, and each key maps to a {@code Set} of target class names
+     * that the source can be converted to.
+     * </p>
+     *
+     * @return A {@code Map<String, Set<String>>} representing all supported conversions by class names.
+     */
+    public static Map<String, Set<String>> getSupportedConversions() {
+        return instance.getSupportedConversions();
+    }
+
+
+    /**
+     * Convert from the passed in instance to a String.  If null is passed in, this method will return "".
+     * Call 'getSupportedConversions()' to see all conversion options for all Classes (all sources to all destinations).
+     */
+    public static String convert2String(Object fromInstance)
+    {
+        if (fromInstance == null) {
+            return "";
+        }
+        return instance.convert(fromInstance, String.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a String.  If null is passed in, this method will return null.
+     */
+    public static String convertToString(Object fromInstance)
+    {
+        return instance.convert(fromInstance, String.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a BigDecimal.  If null or "" is passed in, this method will return a
+     * BigDecimal with the value of 0.
+     */
+    public static BigDecimal convert2BigDecimal(Object fromInstance)
+    {
+        if (fromInstance == null) {
+            return BigDecimal.ZERO;
+        }
+        return instance.convert(fromInstance, BigDecimal.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a BigDecimal.  If null is passed in, this method will return null.  If ""
+     * is passed in, this method will return a BigDecimal with the value of 0. 
+     */
+    public static BigDecimal convertToBigDecimal(Object fromInstance)
+    {
+        return instance.convert(fromInstance, BigDecimal.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a BigInteger.  If null or "" is passed in, this method will return a
+     * BigInteger with the value of 0.
+     */
+    public static BigInteger convert2BigInteger(Object fromInstance)
+    {
+        if (fromInstance == null) {
+            return BigInteger.ZERO;
+        }
+        return instance.convert(fromInstance, BigInteger.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a BigInteger.  If null is passed in, this method will return null.  If ""
+     * is passed in, this method will return a BigInteger with the value of 0.
+     */
+    public static BigInteger convertToBigInteger(Object fromInstance)
+    {
+        return instance.convert(fromInstance, BigInteger.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a java.sql.Date.  If null is passed in, this method will return null.
+     */
+    public static java.sql.Date convertToSqlDate(Object fromInstance)
+    {
+        return instance.convert(fromInstance, java.sql.Date.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a Timestamp.  If null is passed in, this method will return null.
+     */
+    public static Timestamp convertToTimestamp(Object fromInstance)
+    {
+        return instance.convert(fromInstance, Timestamp.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a Date.  If null is passed in, this method will return null.
+     */
+    public static Date convertToDate(Object fromInstance)
+    {
+        return instance.convert(fromInstance, Date.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a LocalDate.  If null is passed in, this method will return null.
+     */
+    public static LocalDate convertToLocalDate(Object fromInstance)
+    {
+        return instance.convert(fromInstance, LocalDate.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a LocalDateTime.  If null is passed in, this method will return null.
+     */
+    public static LocalDateTime convertToLocalDateTime(Object fromInstance)
+    {
+        return instance.convert(fromInstance, LocalDateTime.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a Date.  If null is passed in, this method will return null.
+     */
+    public static ZonedDateTime convertToZonedDateTime(Object fromInstance)
+    {
+        return instance.convert(fromInstance, ZonedDateTime.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a Calendar.  If null is passed in, this method will return null.
+     */
+    public static Calendar convertToCalendar(Object fromInstance)
+    {
+        return convert(fromInstance, Calendar.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a char.  If null is passed in, (char) 0 is returned.
+     */
+    public static char convert2char(Object fromInstance)
+    {
+        if (fromInstance == null) {
+            return 0;
+        }
+        return instance.convert(fromInstance, char.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a Character.  If null is passed in, null is returned.
+     */
+    public static Character convertToCharacter(Object fromInstance)
+    {
+        return instance.convert(fromInstance, Character.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a byte.  If null is passed in, (byte) 0 is returned.
+     */
+    public static byte convert2byte(Object fromInstance)
+    {
+        if (fromInstance == null) {
+            return 0;
+        }
+        return instance.convert(fromInstance, byte.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a Byte.  If null is passed in, null is returned.
+     */
     public static Byte convertToByte(Object fromInstance)
     {
-        if (fromInstance == null)
-        {
-            return BYTE_ZERO;
-        }
-        try
-        {
-            if (fromInstance instanceof String)
-            {
-                if (StringUtilities.isEmpty((String)fromInstance))
-                {
-                    return BYTE_ZERO;
-                }
-                return Byte.valueOf(((String) fromInstance).trim());
-            }
-            else if (fromInstance instanceof Byte)
-            {
-                return (Byte)fromInstance;
-            }
-            else if (fromInstance instanceof Number)
-            {
-                return ((Number)fromInstance).byteValue();
-            }
-            else if (fromInstance instanceof Boolean)
-            {
-                return (Boolean) fromInstance ? BYTE_ONE : BYTE_ZERO;
-            }
-            else if (fromInstance instanceof AtomicBoolean)
-            {
-                return ((AtomicBoolean)fromInstance).get() ? BYTE_ONE : BYTE_ZERO;
-            }
-        }
-        catch(Exception e)
-        {
-            throw new IllegalArgumentException("value [" + name(fromInstance) + "] could not be converted to a 'Byte'", e);
-        }
-        nope(fromInstance, "Byte");
-        return null;
+        return instance.convert(fromInstance, Byte.class);
     }
 
+    /**
+     * Convert from the passed in instance to a short.  If null is passed in, (short) 0 is returned.
+     */
+    public static short convert2short(Object fromInstance)
+    {
+        if (fromInstance == null) {
+            return 0;
+        }
+        return instance.convert(fromInstance, short.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a Short.  If null is passed in, null is returned.
+     */
     public static Short convertToShort(Object fromInstance)
     {
-        if (fromInstance == null)
-        {
-            return SHORT_ZERO;
-        }
-        try
-        {
-            if (fromInstance instanceof String)
-            {
-                if (StringUtilities.isEmpty((String)fromInstance))
-                {
-                    return SHORT_ZERO;
-                }
-                return Short.valueOf(((String) fromInstance).trim());
-            }
-            else if (fromInstance instanceof Short)
-            {
-                return (Short)fromInstance;
-            }
-            else if (fromInstance instanceof Number)
-            {
-                return ((Number)fromInstance).shortValue();
-            }
-            else if (fromInstance instanceof Boolean)
-            {
-                return (Boolean) fromInstance ? SHORT_ONE : SHORT_ZERO;
-            }
-            else if (fromInstance instanceof AtomicBoolean)
-            {
-                return ((AtomicBoolean) fromInstance).get() ? SHORT_ONE : SHORT_ZERO;
-            }
-        }
-        catch(Exception e)
-        {
-            throw new IllegalArgumentException("value [" + name(fromInstance) + "] could not be converted to a 'Short'", e);
-        }
-        nope(fromInstance, "Short");
-        return null;
+        return instance.convert(fromInstance, Short.class);
     }
 
+    /**
+     * Convert from the passed in instance to an int.  If null is passed in, (int) 0 is returned.
+     */
+    public static int convert2int(Object fromInstance)
+    {
+        if (fromInstance == null) {
+            return 0;
+        }
+        return instance.convert(fromInstance, int.class);
+    }
+
+    /**
+     * Convert from the passed in instance to an Integer.  If null is passed in, null is returned.
+     */
     public static Integer convertToInteger(Object fromInstance)
     {
-        if (fromInstance == null)
-        {
-            return INTEGER_ZERO;
-        }
-        try
-        {
-            if (fromInstance instanceof Integer)
-            {
-                return (Integer)fromInstance;
-            }
-            else if (fromInstance instanceof Number)
-            {
-                return ((Number)fromInstance).intValue();
-            }
-            else if (fromInstance instanceof String)
-            {
-                if (StringUtilities.isEmpty((String)fromInstance))
-                {
-                    return INTEGER_ZERO;
-                }
-                return Integer.valueOf(((String) fromInstance).trim());
-            }
-            else if (fromInstance instanceof Boolean)
-            {
-                return (Boolean) fromInstance ? INTEGER_ONE : INTEGER_ZERO;
-            }
-            else if (fromInstance instanceof AtomicBoolean)
-            {
-                return ((AtomicBoolean) fromInstance).get() ? INTEGER_ONE : INTEGER_ZERO;
-            }
-        }
-        catch(Exception e)
-        {
-            throw new IllegalArgumentException("value [" + name(fromInstance) + "] could not be converted to an 'Integer'", e);
-        }
-        nope(fromInstance, "Integer");
-        return null;
+        return instance.convert(fromInstance, Integer.class);
     }
 
+    /**
+     * Convert from the passed in instance to an long.  If null is passed in, (long) 0 is returned.
+     */
+    public static long convert2long(Object fromInstance)
+    {
+        if (fromInstance == null) {
+            return CommonValues.LONG_ZERO;
+        }
+        return instance.convert(fromInstance, long.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a Long.  If null is passed in, null is returned.
+     */
     public static Long convertToLong(Object fromInstance)
     {
-        if (fromInstance == null)
-        {
-            return LONG_ZERO;
-        }
-        try
-        {
-            if (fromInstance instanceof Long)
-            {
-                return (Long) fromInstance;
-            }
-            else if (fromInstance instanceof String)
-            {
-                if ("".equals(fromInstance))
-                {
-                    return LONG_ZERO;
-                }
-                return Long.valueOf(((String) fromInstance).trim());
-            }
-            else if (fromInstance instanceof Number)
-            {
-                return ((Number)fromInstance).longValue();
-            }
-            else if (fromInstance instanceof Boolean)
-            {
-                return (Boolean) fromInstance ? LONG_ONE : LONG_ZERO;
-            }
-            else if (fromInstance instanceof Date)
-            {
-                return ((Date)fromInstance).getTime();
-            }
-            else if (fromInstance instanceof AtomicBoolean)
-            {
-                return ((AtomicBoolean) fromInstance).get() ? LONG_ONE : LONG_ZERO;
-            }
-            else if (fromInstance instanceof Calendar)
-            {
-                return ((Calendar)fromInstance).getTime().getTime();
-            }
-        }
-        catch(Exception e)
-        {
-            throw new IllegalArgumentException("value [" + name(fromInstance) + "] could not be converted to a 'Long'", e);
-        }
-        nope(fromInstance, "Long");
-        return null;
+        return instance.convert(fromInstance, Long.class);
     }
 
+    /**
+     * Convert from the passed in instance to a float.  If null is passed in, 0.0f is returned.
+     */
+    public static float convert2float(Object fromInstance)
+    {
+        if (fromInstance == null) {
+            return CommonValues.FLOAT_ZERO;
+        }
+        return instance.convert(fromInstance, float.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a Float.  If null is passed in, null is returned.
+     */
     public static Float convertToFloat(Object fromInstance)
     {
-        if (fromInstance == null)
-        {
-            return FLOAT_ZERO;
-        }
-        try
-        {
-            if (fromInstance instanceof String)
-            {
-                if (StringUtilities.isEmpty((String)fromInstance))
-                {
-                    return FLOAT_ZERO;
-                }
-                return Float.valueOf(((String) fromInstance).trim());
-            }
-            else if (fromInstance instanceof Float)
-            {
-                return (Float)fromInstance;
-            }
-            else if (fromInstance instanceof Number)
-            {
-                return ((Number)fromInstance).floatValue();
-            }
-            else if (fromInstance instanceof Boolean)
-            {
-                return (Boolean) fromInstance ? FLOAT_ONE : FLOAT_ZERO;
-            }
-            else if (fromInstance instanceof AtomicBoolean)
-            {
-                return ((AtomicBoolean) fromInstance).get() ? FLOAT_ONE : FLOAT_ZERO;
-            }
-        }
-        catch(Exception e)
-        {
-            throw new IllegalArgumentException("value [" + name(fromInstance) + "] could not be converted to a 'Float'", e);
-        }
-        nope(fromInstance, "Float");
-        return null;
+        return instance.convert(fromInstance, Float.class);
     }
 
+    /**
+     * Convert from the passed in instance to a double.  If null is passed in, 0.0d is returned.
+     */
+    public static double convert2double(Object fromInstance)
+    {
+        if (fromInstance == null) {
+            return CommonValues.DOUBLE_ZERO;
+        }
+        return instance.convert(fromInstance, double.class);
+    }
+
+    /**
+     * Convert from the passed in instance to a Double.  If null is passed in, null is returned.
+     */
     public static Double convertToDouble(Object fromInstance)
     {
-        if (fromInstance == null)
-        {
-            return DOUBLE_ZERO;
-        }
-        try
-        {
-            if (fromInstance instanceof String)
-            {
-                if (StringUtilities.isEmpty((String)fromInstance))
-                {
-                    return DOUBLE_ZERO;
-                }
-                return Double.valueOf(((String) fromInstance).trim());
-            }
-            else if (fromInstance instanceof Double)
-            {
-                return (Double)fromInstance;
-            }
-            else if (fromInstance instanceof Number)
-            {
-                return ((Number)fromInstance).doubleValue();
-            }
-            else if (fromInstance instanceof Boolean)
-            {
-                return (Boolean) fromInstance ? DOUBLE_ONE : DOUBLE_ZERO;
-            }
-            else if (fromInstance instanceof AtomicBoolean)
-            {
-                return ((AtomicBoolean) fromInstance).get() ? DOUBLE_ONE : DOUBLE_ZERO;
-            }
-        }
-        catch(Exception e)
-        {
-            throw new IllegalArgumentException("value [" + name(fromInstance) + "] could not be converted to a 'Double'", e);
-        }
-        nope(fromInstance, "Double");
-        return null;
+        return instance.convert(fromInstance, Double.class);
     }
 
-    public static Boolean convertToBoolean(Object fromInstance)
+    /**
+     * Convert from the passed in instance to a boolean.  If null is passed in, false is returned.
+     */
+    public static boolean convert2boolean(Object fromInstance)
     {
-        if (fromInstance == null)
-        {
+        if (fromInstance == null) {
             return false;
         }
-        else if (fromInstance instanceof Boolean)
-        {
-            return (Boolean)fromInstance;
-        }
-        else if (fromInstance instanceof String)
-        {
-            // faster equals check "true" and "false"
-            if ("true".equals(fromInstance))
-            {
-                return true;
-            }
-            else if ("false".equals(fromInstance))
-            {
-                return false;
-            }
-
-            return "true".equalsIgnoreCase((String)fromInstance);
-        }
-        else if (fromInstance instanceof Number)
-        {
-            return ((Number)fromInstance).longValue() != 0;
-        }
-        else if (fromInstance instanceof AtomicBoolean)
-        {
-            return ((AtomicBoolean) fromInstance).get();
-        }
-        nope(fromInstance, "Boolean");
-        return false;
+        return instance.convert(fromInstance, boolean.class);
     }
 
-    public static AtomicInteger convertToAtomicInteger(Object fromInstance)
+    /**
+     * Convert from the passed in instance to a Boolean.  If null is passed in, null is returned.
+     */
+    public static Boolean convertToBoolean(Object fromInstance)
     {
-        if (fromInstance == null)
-        {
+        return instance.convert(fromInstance, Boolean.class);
+    }
+
+    /**
+     * Convert from the passed in instance to an AtomicInteger.  If null is passed in, a new AtomicInteger(0) is
+     * returned.
+     */
+    public static AtomicInteger convert2AtomicInteger(Object fromInstance)
+    {
+        if (fromInstance == null) {
             return new AtomicInteger(0);
         }
-        try
-        {
-            if (fromInstance instanceof AtomicInteger)
-            {   // return a new instance because AtomicInteger is mutable
-                return new AtomicInteger(((AtomicInteger)fromInstance).get());
-            }
-            else if (fromInstance instanceof String)
-            {
-                if (StringUtilities.isEmpty((String)fromInstance))
-                {
-                    return new AtomicInteger(0);
-                }
-                return new AtomicInteger(Integer.valueOf(((String) fromInstance).trim()));
-            }
-            else if (fromInstance instanceof Number)
-            {
-                return new AtomicInteger(((Number)fromInstance).intValue());
-            }
-            else if (fromInstance instanceof Boolean)
-            {
-                return (Boolean) fromInstance ? new AtomicInteger(1) : new AtomicInteger(0);
-            }
-            else if (fromInstance instanceof AtomicBoolean)
-            {
-                return ((AtomicBoolean) fromInstance).get() ? new AtomicInteger(1) : new AtomicInteger(0);
-            }
-        }
-        catch(Exception e)
-        {
-            throw new IllegalArgumentException("value [" + name(fromInstance) + "] could not be converted to an 'AtomicInteger'", e);
-        }
-        nope(fromInstance, "AtomicInteger");
-        return null;
+        return instance.convert(fromInstance, AtomicInteger.class);
     }
 
-    public static AtomicLong convertToAtomicLong(Object fromInstance)
+    /**
+     * Convert from the passed in instance to an AtomicInteger.  If null is passed in, null is returned.
+     */
+    public static AtomicInteger convertToAtomicInteger(Object fromInstance)
     {
-        if (fromInstance == null)
-        {
+        return instance.convert(fromInstance, AtomicInteger.class);
+    }
+
+    /**
+     * Convert from the passed in instance to an AtomicLong.  If null is passed in, new AtomicLong(0L) is returned.
+     */
+    public static AtomicLong convert2AtomicLong(Object fromInstance)
+    {
+        if (fromInstance == null) {
             return new AtomicLong(0);
         }
-        try
-        {
-            if (fromInstance instanceof String)
-            {
-                if (StringUtilities.isEmpty((String)fromInstance))
-                {
-                    return new AtomicLong(0);
-                }
-                return new AtomicLong(Long.valueOf(((String) fromInstance).trim()));
-            }
-            else if (fromInstance instanceof AtomicLong)
-            {   // return a clone of the AtomicLong because it is mutable
-                return new AtomicLong(((AtomicLong)fromInstance).get());
-            }
-            else if (fromInstance instanceof Number)
-            {
-                return new AtomicLong(((Number)fromInstance).longValue());
-            }
-            else if (fromInstance instanceof Date)
-            {
-                return new AtomicLong(((Date)fromInstance).getTime());
-            }
-            else if (fromInstance instanceof Boolean)
-            {
-                return (Boolean) fromInstance ? new AtomicLong(1L) : new AtomicLong(0L);
-            }
-            else if (fromInstance instanceof AtomicBoolean)
-            {
-                return ((AtomicBoolean) fromInstance).get() ? new AtomicLong(1L) : new AtomicLong(0L);
-            }
-            else if (fromInstance instanceof Calendar)
-            {
-                return new AtomicLong(((Calendar)fromInstance).getTime().getTime());
-            }
-        }
-        catch(Exception e)
-        {
-            throw new IllegalArgumentException("value [" + name(fromInstance) + "] could not be converted to an 'AtomicLong'", e);
-        }
-        nope(fromInstance, "AtomicLong");
-        return null;
+        return instance.convert(fromInstance, AtomicLong.class);
     }
 
-    public static AtomicBoolean convertToAtomicBoolean(Object fromInstance)
+    /**
+     * Convert from the passed in instance to an AtomicLong.  If null is passed in, null is returned.
+     */
+    public static AtomicLong convertToAtomicLong(Object fromInstance)
     {
-        if (fromInstance == null)
-        {
+        return instance.convert(fromInstance, AtomicLong.class);
+    }
+
+    /**
+     * Convert from the passed in instance to an AtomicBoolean.  If null is passed in, new AtomicBoolean(false) is
+     * returned.
+     */
+    public static AtomicBoolean convert2AtomicBoolean(Object fromInstance)
+    {
+        if (fromInstance == null) {
             return new AtomicBoolean(false);
         }
-        else if (fromInstance instanceof String)
-        {
-            if (StringUtilities.isEmpty((String)fromInstance))
-            {
-                return new AtomicBoolean(false);
-            }
-            String value = (String)  fromInstance;
-            return new AtomicBoolean("true".equalsIgnoreCase(value));
-        }
-        else if (fromInstance instanceof AtomicBoolean)
-        {   // return a clone of the AtomicBoolean because it is mutable
-            return new AtomicBoolean(((AtomicBoolean)fromInstance).get());
-        }
-        else if (fromInstance instanceof Boolean)
-        {
-            return new AtomicBoolean((Boolean) fromInstance);
-        }
-        else if (fromInstance instanceof Number)
-        {
-            return new AtomicBoolean(((Number)fromInstance).longValue() != 0);
-        }
-        nope(fromInstance, "AtomicBoolean");
-        return null;
+        return instance.convert(fromInstance, AtomicBoolean.class);
     }
 
-    private static String nope(Object fromInstance, String targetType)
+    /**
+     * Convert from the passed in instance to an AtomicBoolean.  If null is passed in, null is returned.
+     */
+    public static AtomicBoolean convertToAtomicBoolean(Object fromInstance)
     {
-        throw new IllegalArgumentException("Unsupported value type [" + name(fromInstance) + "] attempting to convert to '" + targetType + "'");
+        return instance.convert(fromInstance, AtomicBoolean.class);
+    }
+    
+    /**
+     * No longer needed - use convert(localDate, long.class)
+     * @param localDate A Java LocalDate
+     * @return a long representing the localDate as epoch milliseconds (since 1970 Jan 1 at midnight)
+     * @deprecated  replaced by convert(localDate, long.class)
+     */
+    @Deprecated
+    public static long localDateToMillis(LocalDate localDate)
+    {
+        return instance.convert(localDate, long.class);
     }
 
-    private static String name(Object fromInstance)
+    /**
+     * No longer needed - use convert(localDateTime, long.class)
+     * @param localDateTime A Java LocalDateTime
+     * @return a long representing the localDateTime as epoch milliseconds (since 1970 Jan 1 at midnight)
+     * @deprecated replaced by convert(localDateTime, long.class)
+     */
+    @Deprecated
+    public static long localDateTimeToMillis(LocalDateTime localDateTime)
     {
-        if (fromInstance == null)
-        {
-            return "(null)";
-        }
-        else
-        {
-            return fromInstance.getClass().getName() + " (" + fromInstance.toString() + ")";
-        }
+        return instance.convert(localDateTime, long.class);
+    }
+
+    /**
+     * No longer needed - use convert(ZonedDateTime, long.class)
+     * @param zonedDateTime A Java ZonedDateTime
+     * @return a long representing the ZonedDateTime as epoch milliseconds (since 1970 Jan 1 at midnight)
+     * @deprecated replaced by convert(ZonedDateTime, long.class)
+     */
+    @Deprecated
+    public static long zonedDateTimeToMillis(ZonedDateTime zonedDateTime)
+    {
+        return instance.convert(zonedDateTime, long.class);
     }
 }

@@ -4,12 +4,108 @@
     <name>java-util</name>
     <groupId>com.cedarsoftware</groupId>
     <artifactId>java-util</artifactId>
-    <packaging>jar</packaging>
-    <version>1.39.0-SNAPSHOT</version>
+    <packaging>bundle</packaging>
+    <version>4.0.0</version>
     <description>Java Utilities</description>
     <url>https://github.com/jdereg/java-util</url>
 
+    <developers>
+        <developer>
+            <id>jdereg</id>
+            <name>John DeRegnaucourt</name>
+            <email>jdereg@gmail.com</email>
+        </developer>
+        <developer>
+            <id>kpartlow</id>
+            <name>Kenny Partlow</name>
+            <email>kpartlow@gmail.com</email>
+        </developer>
+    </developers>
+
+    <properties>
+        <maven.build.timestamp.format>yyyy-MM-dd'T'HH:mm:ss.SSSZ</maven.build.timestamp.format>
+        <!-- remove source encoding warnings from maven output -->
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- testing only -->
+        <version.junit-jupiter-api>5.13.4</version.junit-jupiter-api>
+        <version.junit-jupiter-params>5.13.4</version.junit-jupiter-params>
+        <version.mockito-junit-jupiter>4.11.0</version.mockito-junit-jupiter>
+        <version.assertj-core>3.27.4</version.assertj-core>
+        <version.json-io>4.59.0</version.json-io>
+        <version.agrona>1.22.0</version.agrona> <!-- do not increase past 1.22.0 until abandoning JDK 8 support, class file format 52 -->
+        <version.commons-collections4>4.5.0</version.commons-collections4>
+        <version.guava>33.4.8-jre</version.guava>
+
+        <!-- Build maven-***-plugins -->
+        <version.maven-jar-plugin>3.4.2</version.maven-jar-plugin>
+        <version.maven-gpg-plugin>3.2.8</version.maven-gpg-plugin>
+        <version.maven-compiler-plugin>3.14.0</version.maven-compiler-plugin>
+        <version.maven-javadoc-plugin>3.11.3</version.maven-javadoc-plugin>
+        <version.maven-surefire-plugin>3.5.3</version.maven-surefire-plugin>
+        <version.maven-source-plugin>3.3.1</version.maven-source-plugin>
+        <version.maven-scr-plugin>1.26.4</version.maven-scr-plugin>
+        <version.maven-bundle-plugin>6.0.0</version.maven-bundle-plugin>
+        <version.maven-resources-plugin>3.3.1</version.maven-resources-plugin>
+        <version.maven-install-plugin>3.1.4</version.maven-install-plugin>
+        <version.maven-deploy-plugin>3.1.4</version.maven-deploy-plugin>
+        <version.moditect-maven-plugin>1.3.0.Final</version.moditect-maven-plugin>
+
+        <!-- release to Maven Central via Sonatype Nexus -->
+        <version.central-publishing-maven-plugin>0.8.0</version.central-publishing-maven-plugin>
+
+    </properties>
+
     <profiles>
+
+        <!-- JDK 9 and newer -->
+        <profile>
+            <id>jdk9-and-above</id>
+            <activation>
+                <jdk>[9,)</jdk>
+            </activation>
+
+            <!-- only the flags that modern javac needs -->
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <version>${version.maven-compiler-plugin}</version>
+                        <configuration>
+                            <release>8</release>
+                            <testRelease>8</testRelease>
+                            <encoding>${project.build.sourceEncoding}</encoding>
+                            <parameters>true</parameters>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- JDK 8 -->
+        <profile>
+            <id>jdk8</id>
+            <activation>
+                <jdk>1.8</jdk>
+            </activation>
+
+            <!-- classic - source / target for the legacy tool-chain -->
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <version>${version.maven-compiler-plugin}</version>
+                        <configuration>
+                            <source>1.8</source>
+                            <target>1.8</target>
+                            <encoding>${project.build.sourceEncoding}</encoding>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
 
         <profile>
             <id>release-sign-artifacts</id>
@@ -21,10 +117,11 @@
             </activation>
             <build>
                 <plugins>
+
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-gpg-plugin</artifactId>
-                        <version>${version.plugin.gpg}</version>
+                        <version>${version.maven-gpg-plugin}</version>
                         <executions>
                             <execution>
                                 <id>sign-artifacts</id>
@@ -39,6 +136,7 @@
                             </execution>
                         </executions>
                     </plugin>
+
                 </plugins>
             </build>
         </profile>
@@ -47,7 +145,7 @@
     <licenses>
         <license>
             <name>The Apache Software License, Version 2.0</name>
-            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
             <distribution>repo</distribution>
         </license>
     </licenses>
@@ -58,73 +156,71 @@
         <developerConnection>scm:git:git@github.com:jdereg/java-util.git</developerConnection>
     </scm>
 
-    <developers>
-        <developer>
-            <id>jdereg</id>
-            <name>John DeRegnaucourt</name>
-            <email>john@cedarsoftware.com</email>
-        </developer>
-    </developers>
-
-    <properties>
-        <version.log4j>2.5</version.log4j>
-        <version.junit>4.12</version.junit>
-        <version.json.io>4.11.1</version.json.io>            <!-- testing only -->
-        <version.mockito>1.10.19</version.mockito>
-        <version.plugin.compiler>3.8.1</version.plugin.compiler>
-        <version.plugin.gpg>1.6</version.plugin.gpg>
-        <version.plugin.javadoc>3.1.1</version.plugin.javadoc>
-        <version.plugin.nexus>1.6.8</version.plugin.nexus>
-        <version.plugin.surefire>2.22.2</version.plugin.surefire>
-        <version.plugin.source>3.1.0</version.plugin.source>
-        <version.plugin.felix.scr>1.26.2</version.plugin.felix.scr>
-        <version.plugin.felix.bundle>4.2.1</version.plugin.felix.bundle>
-        <version.agrona>1.0.7</version.agrona>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    </properties>
-
-    <pluginRepositories>
-        <pluginRepository>
-            <id>central</id>
-            <name>Maven Plugin Repository</name>
-            <url>http://repo1.maven.org/maven2</url>
-            <layout>default</layout>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-            <releases>
-                <updatePolicy>never</updatePolicy>
-            </releases>
-        </pluginRepository>
-    </pluginRepositories>
-
     <distributionManagement>
-        <snapshotRepository>
-            <id>ossrh</id>
-            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
-        </snapshotRepository>
-        <repository>
-            <id>ossrh</id>
-            <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
-        </repository>
     </distributionManagement>
 
     <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <version>${version.maven-resources-plugin}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-install-plugin</artifactId>
+                    <version>${version.maven-install-plugin}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-deploy-plugin</artifactId>
+                    <version>${version.maven-deploy-plugin}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>${version.maven-jar-plugin}</version> <!-- Use the latest version available -->
+                <configuration>
+                    <archive>
+                        <manifestEntries>
+                            <Implementation-Title>java-util</Implementation-Title>
+                            <Implementation-Version>${project.version}</Implementation-Version>
+                            <Implementation-Vendor-Id>com.cedarsoftware</Implementation-Vendor-Id>
+                            <Implementation-URL>https://github.com/jdereg/java-util</Implementation-URL>
+                            <Built-By>${user.name}</Built-By>
+                            <Build-Timestamp>${maven.build.timestamp}</Build-Timestamp>
+                            <Build-Jdk>${java.version} (${java.vendor} ${java.vm.version})</Build-Jdk>
+                            <Build-OS>${os.name} ${os.arch} ${os.version}</Build-OS>
+                        </manifestEntries>
+                        <manifest>
+                            <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+
             <plugin>
                 <groupId>org.apache.felix</groupId>
                 <artifactId>maven-scr-plugin</artifactId>
-                <version>${version.plugin.felix.scr}</version>
+                <version>${version.maven-scr-plugin}</version>
             </plugin>
 
             <plugin>
                 <groupId>org.apache.felix</groupId>
                 <artifactId>maven-bundle-plugin</artifactId>
-                <version>${version.plugin.felix.bundle}</version>
+                <version>${version.maven-bundle-plugin}</version>
                 <extensions>true</extensions>
                 <configuration>
                     <instructions>
-                        <Export-Package>com.cedarsoftware.util</Export-Package>
+                        <Export-Package>
+                            com.cedarsoftware.util,
+                            com.cedarsoftware.util.convert
+                        </Export-Package>
                         <DynamicImport-Package>*</DynamicImport-Package>
                     </instructions>
                 </configuration>
@@ -139,20 +235,11 @@
                     </execution>
                 </executions>
             </plugin>
-
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>${version.plugin.compiler}</version>
-                <configuration>
-                    <release>7</release>
-                </configuration>
-            </plugin>
-
+            
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-source-plugin</artifactId>
-                <version>${version.plugin.source}</version>
+                <version>${version.maven-source-plugin}</version>
                 <executions>
                     <execution>
                         <id>attach-sources</id>
@@ -166,7 +253,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
-                <version>${version.plugin.javadoc}</version>
+                <version>${version.maven-javadoc-plugin}</version>
                 <configuration>
                     <additionalOptions>-Xdoclint:none</additionalOptions>
                     <additionalJOption>-Xdoclint:none</additionalJOption>
@@ -182,70 +269,123 @@
             </plugin>
 
             <plugin>
-                <groupId>org.sonatype.plugins</groupId>
-                <artifactId>nexus-staging-maven-plugin</artifactId>
-                <version>${version.plugin.nexus}</version>
+                <groupId>org.sonatype.central</groupId>
+                <artifactId>central-publishing-maven-plugin</artifactId>
+                <version>${version.central-publishing-maven-plugin}</version>
                 <extensions>true</extensions>
                 <configuration>
-                    <serverId>ossrh</serverId>
-                    <nexusUrl>https://oss.sonatype.org/</nexusUrl>
-                    <autoReleaseAfterClose>true</autoReleaseAfterClose>
+                    <publishingServerId>central</publishingServerId>
+                    <!--
+                    <autoPublish>true</autoPublish>
+                    <waitUntil>published</waitUntil>
+                    -->
                 </configuration>
             </plugin>
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>${version.plugin.surefire}</version>
+                <version>${version.maven-surefire-plugin}</version>
                 <configuration>
-                    <forkCount>0</forkCount>
+                    <argLine>
+                        -Duser.timezone=America/New_York
+                        -Duser.language=en
+                        -Duser.region=US
+                        -Duser.country=US
+                        -Xmx1500m
+                    </argLine>
                 </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.moditect</groupId>
+                <artifactId>moditect-maven-plugin</artifactId>
+                <version>${version.moditect-maven-plugin}</version>
+                <executions>
+                    <execution>
+                        <id>add-module-infos</id>
+                        <goals>
+                            <goal>add-module-info</goal>
+                        </goals>
+                        <phase>package</phase>
+                        <configuration>
+                            <jvmVersion>base</jvmVersion>
+                            <module>
+                                <moduleInfoSource>
+                                    module com.cedarsoftware.util {
+                                    requires java.sql;
+                                    requires java.xml;
+                                    exports com.cedarsoftware.util;
+                                    exports com.cedarsoftware.util.convert;
+                                    }
+                                </moduleInfoSource>
+                            </module>
+                            <overwriteExistingFiles>true</overwriteExistingFiles>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
 
         </plugins>
     </build>
 
     <dependencies>
-
         <dependency>
-            <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-api</artifactId>
-            <version>${version.log4j}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-core</artifactId>
-            <version>${version.log4j}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <version>${version.junit}</version>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <version>${version.junit-jupiter-api}</version>
             <scope>test</scope>
         </dependency>
-        
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
+            <version>${version.junit-jupiter-params}</version>
+            <scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.mockito</groupId>
-            <artifactId>mockito-all</artifactId>
-            <version>${version.mockito}</version>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <version>${version.mockito-junit-jupiter}</version>
             <scope>test</scope>
         </dependency>
-        
+
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>${version.assertj-core}</version>
+            <scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>com.cedarsoftware</groupId>
             <artifactId>json-io</artifactId>
-            <version>${version.json.io}</version>
+            <version>${version.json-io}</version>
             <scope>test</scope>
         </dependency>
-
+        
         <dependency>
             <groupId>org.agrona</groupId>
             <artifactId>agrona</artifactId>
             <version>${version.agrona}</version>
             <scope>test</scope>
         </dependency>
+        
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-collections4</artifactId>
+            <version>${version.commons-collections4}</version>
+            <scope>test</scope>
+        </dependency>
+        
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>${version.guava}</version>
+            <scope>test</scope>
+        </dependency>
 
     </dependencies>
 </project>
+

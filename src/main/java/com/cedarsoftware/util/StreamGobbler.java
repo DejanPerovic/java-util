@@ -4,12 +4,14 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
 /**
  * This class is used in conjunction with the Executor class.  Example
  * usage:
  *
- * @author John DeRegnaucourt (john@cedarsoftware.com)
+ * @author John DeRegnaucourt (jdereg@gmail.com)
  *         <br>
  *         Copyright (c) Cedar Software LLC
  *         <br><br>
@@ -17,7 +19,7 @@ import java.io.InputStreamReader;
  *         you may not use this file except in compliance with the License.
  *         You may obtain a copy of the License at
  *         <br><br>
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *         <a href="http://www.apache.org/licenses/LICENSE-2.0">License</a>
  *         <br><br>
  *         Unless required by applicable law or agreed to in writing, software
  *         distributed under the License is distributed on an "AS IS" BASIS,
@@ -28,25 +30,41 @@ import java.io.InputStreamReader;
 public class StreamGobbler implements Runnable
 {
     private final InputStream _inputStream;
+    private final Charset _charset;
     private String _result;
 
     StreamGobbler(InputStream is)
     {
-        _inputStream = is;
+        this(is, StandardCharsets.UTF_8);
     }
 
+    StreamGobbler(InputStream is, Charset charset)
+    {
+        _inputStream = is;
+        _charset = charset;
+    }
+
+    /**
+     * Returns all text that was read from the underlying input stream.
+     *
+     * @return captured output from the stream
+     */
     public String getResult()
     {
         return _result;
     }
 
+    /**
+     * Continuously reads from the supplied input stream until it is exhausted.
+     * The collected data is stored so it can be retrieved via {@link #getResult()}.
+     */
     public void run()
     {
         InputStreamReader isr = null;
         BufferedReader br = null;
         try
         {
-            isr = new InputStreamReader(_inputStream);
+            isr = new InputStreamReader(_inputStream, _charset);
             br = new BufferedReader(isr);
             StringBuilder output = new StringBuilder();
             String line;
@@ -68,3 +86,4 @@ public class StreamGobbler implements Runnable
         }
     }
 }
+

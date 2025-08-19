@@ -1,0 +1,181 @@
+package com.cedarsoftware.util.convert;
+
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.sql.Timestamp;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.OffsetTime;
+import java.time.ZonedDateTime;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.UUID;
+import java.time.MonthDay;
+import java.awt.Dimension;
+import java.awt.Insets;
+import java.awt.Rectangle;
+
+/**
+ * @author John DeRegnaucourt (jdereg@gmail.com)
+ *         <br>
+ *         Copyright (c) Cedar Software LLC
+ *         <br><br>
+ *         Licensed under the Apache License, Version 2.0 (the "License");
+ *         you may not use this file except in compliance with the License.
+ *         You may obtain a copy of the License at
+ *         <br><br>
+ *         <a href="http://www.apache.org/licenses/LICENSE-2.0">License</a>
+ *         <br><br>
+ *         Unless required by applicable law or agreed to in writing, software
+ *         distributed under the License is distributed on an "AS IS" BASIS,
+ *         WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *         See the License for the specific language governing permissions and
+ *         limitations under the License.
+ */
+final class BigDecimalConversions {
+    static final BigDecimal BILLION = BigDecimal.valueOf(1_000_000_000);
+    static final BigDecimal GRAND = BigDecimal.valueOf(1000);
+
+    private BigDecimalConversions() { }
+
+    static Calendar toCalendar(Object from, Converter converter) {
+        BigDecimal seconds = (BigDecimal) from;
+        BigDecimal millis = seconds.multiply(GRAND);
+        Calendar calendar = Calendar.getInstance(converter.getOptions().getTimeZone());
+        calendar.setTimeInMillis(millis.longValue());
+        return calendar;
+    }
+
+    static Instant toInstant(Object from, Converter converter) {
+        BigDecimal seconds = (BigDecimal) from;
+        BigDecimal nanos = seconds.remainder(BigDecimal.ONE);
+        return Instant.ofEpochSecond(seconds.longValue(), nanos.movePointRight(9).longValue());
+    }
+
+    static Duration toDuration(Object from, Converter converter) {
+        BigDecimal seconds = (BigDecimal) from;
+        BigDecimal nanos = seconds.remainder(BigDecimal.ONE);
+        return Duration.ofSeconds(seconds.longValue(), nanos.movePointRight(9).longValue());
+    }
+
+    static LocalTime toLocalTime(Object from, Converter converter) {
+        BigDecimal seconds = (BigDecimal) from;
+        BigDecimal nanos = seconds.multiply(BILLION);
+        try {
+            return LocalTime.ofNanoOfDay(nanos.longValue());
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Input value [" + seconds.toPlainString() + "] for conversion to LocalTime must be >= 0 && <= 86399.999999999", e);
+        }
+    }
+
+    static LocalDate toLocalDate(Object from, Converter converter) {
+        return toZonedDateTime(from, converter).toLocalDate();
+    }
+
+    static LocalDateTime toLocalDateTime(Object from, Converter converter) {
+        return toZonedDateTime(from, converter).toLocalDateTime();
+    }
+
+    static OffsetTime toOffsetTime(Object from, Converter converter) {
+        BigDecimal seconds = (BigDecimal) from;
+        try {
+            long wholeSecs = seconds.longValue(); // gets the integer part
+            BigDecimal frac = seconds.subtract(BigDecimal.valueOf(wholeSecs)); // gets just the fractional part
+            long nanos = frac.multiply(BILLION).longValue(); // converts fraction to nanos
+
+            Instant instant = Instant.ofEpochSecond(wholeSecs, nanos);
+            return OffsetTime.ofInstant(instant, converter.getOptions().getZoneId());
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Input value [" + seconds.toPlainString() + "] for conversion to LocalTime must be >= 0 && <= 86399.999999999", e);
+        }
+    }
+    
+    static OffsetDateTime toOffsetDateTime(Object from, Converter converter) {
+        return toZonedDateTime(from, converter).toOffsetDateTime();
+    }
+
+    static ZonedDateTime toZonedDateTime(Object from, Converter converter) {
+        return toInstant(from, converter).atZone(converter.getOptions().getZoneId());
+    }
+
+    static Date toDate(Object from, Converter converter) {
+        return Date.from(toInstant(from, converter));
+    }
+
+    static java.sql.Date toSqlDate(Object from, Converter converter) {
+        Instant instant = toInstant(from, converter);
+        // Convert the Instant to a LocalDate using the converter's zoneId.
+        LocalDate ld = instant.atZone(converter.getOptions().getZoneId()).toLocalDate();
+        // Return a java.sql.Date that represents that LocalDate (normalized to midnight).
+        return java.sql.Date.valueOf(ld);
+    }
+
+    static Timestamp toTimestamp(Object from, Converter converter) {
+        return Timestamp.from(toInstant(from, converter));
+    }
+
+    static BigInteger toBigInteger(Object from, Converter converter) {
+        return ((BigDecimal)from).toBigInteger();
+    }
+
+    static String toString(Object from, Converter converter) {
+        return ((BigDecimal) from).stripTrailingZeros().toPlainString();
+    }
+
+    static UUID toUUID(Object from, Converter converter) {
+        BigInteger bigInt = ((BigDecimal) from).toBigInteger();
+        return BigIntegerConversions.toUUID(bigInt, converter);
+    }
+
+    static BigDecimal secondsAndNanosToDouble(long seconds, long nanos) {
+        return BigDecimal.valueOf(seconds).add(BigDecimal.valueOf(nanos, 9));
+    }
+
+    /**
+     * Unsupported conversion from BigDecimal to MonthDay.
+     * @param from BigDecimal instance
+     * @param converter Converter instance
+     * @return Never returns - throws exception
+     * @throws IllegalArgumentException Always thrown to indicate unsupported conversion
+     */
+    static MonthDay toMonthDay(Object from, Converter converter) {
+        throw new IllegalArgumentException("Unsupported conversion from BigDecimal to MonthDay - no meaningful conversion exists.");
+    }
+
+    /**
+     * Unsupported conversion from BigDecimal to Insets.
+     * @param from BigDecimal instance
+     * @param converter Converter instance
+     * @return Never returns - throws exception
+     * @throws IllegalArgumentException Always thrown to indicate unsupported conversion
+     */
+    static Insets toInsets(Object from, Converter converter) {
+        throw new IllegalArgumentException("Unsupported conversion from BigDecimal to Insets - no meaningful conversion exists.");
+    }
+
+    /**
+     * Unsupported conversion from BigDecimal to Rectangle.
+     * @param from BigDecimal instance
+     * @param converter Converter instance
+     * @return Never returns - throws exception
+     * @throws IllegalArgumentException Always thrown to indicate unsupported conversion
+     */
+    static Rectangle toRectangle(Object from, Converter converter) {
+        throw new IllegalArgumentException("Unsupported conversion from BigDecimal to Rectangle - no meaningful conversion exists.");
+    }
+
+    /**
+     * Unsupported conversion from BigDecimal to Dimension.
+     * @param from BigDecimal instance
+     * @param converter Converter instance
+     * @return Never returns - throws exception
+     * @throws IllegalArgumentException Always thrown to indicate unsupported conversion
+     */
+    static Dimension toDimension(Object from, Converter converter) {
+        throw new IllegalArgumentException("Unsupported conversion from BigDecimal to Dimension - no meaningful conversion exists.");
+    }
+}
